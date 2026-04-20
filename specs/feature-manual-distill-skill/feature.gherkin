@@ -62,8 +62,8 @@ Feature: Manual distill-session skill
     Given the user's current working directory is "/path/to/My Weird & Project"
     When the user runs "/obsidian-memory:distill-session"
     Then the payload "cwd" field equals "/path/to/My Weird & Project"
-    And the resulting note is under "$VAULT/claude-memory/sessions/my-weird-project/"
-    And the slug in the skill's report equals "my-weird-project"
+    And the hook writes the note under "$VAULT/claude-memory/sessions/my-weird-project/"
+    And the skill reports that note's path
 
   # --- Edge Case ---
 

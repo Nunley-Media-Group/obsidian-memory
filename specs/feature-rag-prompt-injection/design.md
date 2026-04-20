@@ -28,21 +28,21 @@ Per `structure.md`, the RAG hook is purely in the **hook-script tier**: `hooks.j
                           │ UserPromptSubmit event
                           ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  plugins/obsidian-memory/hooks/hooks.json                       │
+│  hooks/hooks.json                       │
 │   UserPromptSubmit[0].hooks[0].command =                        │
 │     ${CLAUDE_PLUGIN_ROOT}/scripts/vault-rag.sh                  │
 └─────────────────────────┬───────────────────────────────────────┘
                           │ stdin: { "prompt": "…" }
                           ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  plugins/obsidian-memory/scripts/vault-rag.sh                   │
+│  scripts/vault-rag.sh                   │
 │   1. guard: jq present? config readable? rag.enabled?           │
 │   2. read prompt from stdin via jq                              │
 │   3. tokenize → stopword filter → dedupe → cap at 6             │
 │   4. build alternation regex                                    │
-│   5. enumerate vault .md files (rg --files, else find -prune)   │
-│   6. score each file (rg -c -i -o, else grep -c -i -E)          │
-│   7. sort -rn, head -n 5                                        │
+│   5. single-pass scoring across vault (rg -c, else find|xargs  │
+│      grep -c), excluding .obsidian/ and .trash/                 │
+│   6. sort -rn, head -n 5                                        │
 │   8. emit <vault-context> with per-file excerpt                 │
 │   9. exit 0                                                     │
 └─────────────────────────┬───────────────────────────────────────┘
@@ -65,10 +65,8 @@ Lowercase → tr -c → awk (stopword + dedupe + len≥4 + cap 6)
 KEYWORDS (newline list, ≤6) → paste -sd '|' → REGEX = "(kw1|kw2|…)"
    │
    ▼
-rg --files (or find -prune) → TMP_FILES (list of candidate *.md)
-   │
-   ▼
-For each file: rg -c -i -o -e REGEX  (or grep -c -i -E)
+Single pass: rg -c -i --glob '*.md' --glob '!.obsidian/**' --glob '!.trash/**'
+  -e REGEX "$VAULT"   (fallback: find -prune ... -print0 | xargs -0 grep -c -i -E)
    │
    ▼
 "<hits>\t<path>" lines → sort -rn -k1,1 | head -n 5 → TOP
@@ -89,7 +87,7 @@ printf '</vault-context>\n'
 
 **Event**: `UserPromptSubmit`
 
-**Wiring** (`plugins/obsidian-memory/hooks/hooks.json`):
+**Wiring** (`hooks/hooks.json`):
 
 ```json
 {
@@ -199,9 +197,9 @@ Not applicable. The `<vault-context>` block is an implementation detail of promp
 ## Performance Considerations
 
 - [x] **Caching**: None. Each invocation does a fresh tokenize + scan.
-- [x] **Parallelism**: None. The per-file score loop is sequential (`while IFS= read -r f; do … done`). On a 1k-note vault with `rg` the loop is < 300 ms because each per-file `rg -c` call is < 1 ms.
-- [x] **Fast-path via `rg`**: `rg --files` is O(filesystem walk) and `rg -c` is O(file bytes); both use mmap'd IO.
-- [x] **Fallback cost**: `find -prune` + `grep -c -i -E` per file is ~3–5× slower than `rg`. Acceptable on vaults where `rg` is unavailable.
+- [x] **Parallelism**: None needed. Scoring is a single `rg -c` (or `xargs -0 grep -c`) invocation that walks the whole vault in one process — no per-file subprocess spawn. On a 10k-note vault this stays well under 300 ms because the subprocess fork cost is paid once, not N times.
+- [x] **Fast-path via `rg`**: `rg -c` performs the walk + match in a single process with mmap'd IO; no separate `rg --files` enumerate step is needed.
+- [x] **Fallback cost**: `find … -print0 | xargs -0 grep -c -i -E` batches all candidates into a small number of grep invocations. ~3–5× slower than `rg` but still one-shot, not per-file.
 - [x] **Payload size**: 5 files × ~600 B excerpt + frame = ~4 KB typical, well under the 8 KB target.
 - [x] **Early-exit guards**: Empty prompt, empty keywords, empty candidate list, and empty hit list each short-circuit to `exit 0` before expensive work.
 
@@ -211,7 +209,7 @@ Not applicable. The `<vault-context>` block is an implementation detail of promp
 
 | Layer | Type | Coverage |
 |-------|------|----------|
-| Shellcheck | Static | `shellcheck plugins/obsidian-memory/scripts/vault-rag.sh` — exit 0 |
+| Shellcheck | Static | `shellcheck scripts/vault-rag.sh` — exit 0 |
 | Unit (helpers) | bats | N/A — `vault-rag.sh` has no extracted helpers to unit-test in isolation |
 | Integration (hook harness) | bats + scratch vault + scratch `$HOME` | Full end-to-end: seed vault, seed config, pipe payload, assert stdout and exit code |
 | BDD | cucumber-shell | All 12 ACs as scenarios |

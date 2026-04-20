@@ -18,7 +18,7 @@
 | Testing | 3 | [ ] (deferred to #1 bats-core harness) |
 | **Total** | **7** | |
 
-Retroactive task breakdown. Implementation artefact lives in `plugins/obsidian-memory/skills/distill-session/SKILL.md`.
+Retroactive task breakdown. Implementation artefact lives in `skills/distill-session/SKILL.md`.
 
 ---
 
@@ -26,7 +26,7 @@ Retroactive task breakdown. Implementation artefact lives in `plugins/obsidian-m
 
 ### T001: SKILL.md frontmatter + skill-runtime contract
 
-**File(s)**: `plugins/obsidian-memory/skills/distill-session/SKILL.md`
+**File(s)**: `skills/distill-session/SKILL.md`
 **Type**: Create
 **Depends**: None
 **Acceptance**:
@@ -40,7 +40,7 @@ Retroactive task breakdown. Implementation artefact lives in `plugins/obsidian-m
 
 ### T002: Prereq check + transcript discovery
 
-**File(s)**: `plugins/obsidian-memory/skills/distill-session/SKILL.md` (Workflow sections 1–2)
+**File(s)**: `skills/distill-session/SKILL.md` (Workflow sections 1–2)
 **Type**: Create
 **Depends**: T001
 **Acceptance**:
@@ -50,7 +50,7 @@ Retroactive task breakdown. Implementation artefact lives in `plugins/obsidian-m
 
 ### T003: Payload construction + hook invocation
 
-**File(s)**: `plugins/obsidian-memory/skills/distill-session/SKILL.md` (Workflow section 3)
+**File(s)**: `skills/distill-session/SKILL.md` (Workflow section 3)
 **Type**: Create
 **Depends**: T002
 **Acceptance**:
@@ -62,14 +62,13 @@ Retroactive task breakdown. Implementation artefact lives in `plugins/obsidian-m
 
 ### T004: Output location + reporting
 
-**File(s)**: `plugins/obsidian-memory/skills/distill-session/SKILL.md` (Workflow sections 4–5)
+**File(s)**: `skills/distill-session/SKILL.md` (Workflow sections 4–5)
 **Type**: Create
 **Depends**: T003
 **Acceptance**:
 - [x] Reads `vaultPath` from config (FR7)
-- [x] Computes slug via same transform as the hook (`basename "$CWD" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9-' '-' | sed -E …`) (FR7)
-- [x] Locates newest `<slug>/*.md` via `ls -1t | head -n 1` (FR7)
-- [x] Reports: transcript path, project slug, note path, real-vs-stub marker (FR8, AC7)
+- [x] Locates the note the hook just wrote via `find "$VAULT/claude-memory/sessions" -name '*.md' -print0 | xargs -0 ls -1t | head -n 1` — the hook owns slug derivation (FR7)
+- [x] Reports: transcript path, note path, real-vs-stub marker (FR8, AC7)
 
 ---
 

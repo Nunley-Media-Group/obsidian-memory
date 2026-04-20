@@ -9,7 +9,7 @@
 
 ## Overview
 
-`/obsidian-memory:setup` is a Claude Code skill (Markdown + frontmatter at `plugins/obsidian-memory/skills/setup/SKILL.md`) whose job is to bootstrap the cross-cutting config + vault layout that the two hook scripts (`vault-rag.sh`, `vault-distill.sh`) read at runtime. The skill produces **four artefacts** and optionally one external side effect (MCP registration). Every action is guarded by an "already in the desired state?" check so re-running is idempotent — this is the load-bearing property of the skill.
+`/obsidian-memory:setup` is a Claude Code skill (Markdown + frontmatter at `skills/setup/SKILL.md`) whose job is to bootstrap the cross-cutting config + vault layout that the two hook scripts (`vault-rag.sh`, `vault-distill.sh`) read at runtime. The skill produces **four artefacts** and optionally one external side effect (MCP registration). Every action is guarded by an "already in the desired state?" check so re-running is idempotent — this is the load-bearing property of the skill.
 
 The skill intentionally keeps control flow in Markdown (executed by the Claude Code skill runtime) rather than a dedicated shell script. This lets the skill compose `Bash`, `Read`, `Write`, `Edit`, and `AskUserQuestion` tools as needed without building a custom shell for conditional edits of an existing JSON config. The hook scripts are plain Bash because they are on the hot path; the skill is one-off and benefits from the skill runtime's orchestration.
 
@@ -25,7 +25,7 @@ Per `steering/structure.md`, the plugin has three tiers: `hooks/` (declarative w
 ┌─────────────────────────────────────────────────────────────────┐
 │                 Claude Code skill runtime                       │
 │  ┌────────────────────────────────────────────────────────┐     │
-│  │  plugins/obsidian-memory/skills/setup/SKILL.md         │     │
+│  │  skills/setup/SKILL.md         │     │
 │  │    · Resolve vault path                                │     │
 │  │    · Write/merge config.json                           │     │
 │  │    · mkdir claude-memory/sessions                      │     │
@@ -75,7 +75,7 @@ Per `steering/structure.md`, the plugin has three tiers: `hooks/` (declarative w
 
 **Invocation:** `/obsidian-memory:setup <vault-path>`
 
-**Frontmatter** (`plugins/obsidian-memory/skills/setup/SKILL.md`):
+**Frontmatter** (`skills/setup/SKILL.md`):
 
 ```yaml
 name: setup

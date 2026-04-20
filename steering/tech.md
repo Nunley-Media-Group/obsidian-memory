@@ -56,12 +56,11 @@ None. obsidian-memory is local-first. The only external binary invoked is the al
 
 ## Versioning
 
-The `plugins/obsidian-memory/.claude-plugin/plugin.json` `version` field is the **single source of truth** for the plugin's current version. A root-level `VERSION` file is not used; the plugin manifest is authoritative so the Claude Code marketplace reads the same value users install against.
+The `.claude-plugin/plugin.json` `version` field is the **single source of truth** for the plugin's current version. A root-level `VERSION` file is not used; the plugin manifest is authoritative so the Claude Code marketplace reads the same value users install against.
 
 | File | Path | Notes |
 |------|------|-------|
-| plugins/obsidian-memory/.claude-plugin/plugin.json | `version` | Plugin manifest; authoritative. Read by Claude Code at install. |
-| .claude-plugin/marketplace.json | `plugins[0].version` | Local marketplace listing. Kept in sync with the plugin manifest. When this plugin is pulled into the upstream `nmg-plugins` marketplace, the upstream listing is the one users see. |
+| .claude-plugin/plugin.json | `version` | Plugin manifest; authoritative. Read by Claude Code at install and by every marketplace that references this repo. |
 | CHANGELOG.md | `line:N` for `## [X.Y.Z]` heading | Conventional Changelog; the heading line changes per release. |
 
 ### Path Syntax
@@ -194,7 +193,7 @@ Every hook script is invoked by Claude Code per the `hooks/hooks.json` schema. T
 
 ### Skill contracts
 
-Every skill is a `SKILL.md` under `plugins/obsidian-memory/skills/<name>/SKILL.md`. Each has:
+Every skill is a `SKILL.md` under `skills/<name>/SKILL.md`. Each has:
 
 1. A frontmatter block declaring `name`, `description`, `version`.
 2. A "When to Use" section.
@@ -283,7 +282,7 @@ then_the_hook_output_contains_a_vault_context_block() {
 | Unit | bats-core | `tests/unit/` | `bats tests/unit` |
 | Integration | bats-core (with scratch `$HOME` + scratch vault) | `tests/integration/` | `bats tests/integration` |
 | BDD | cucumber-shell | `specs/**/feature.gherkin` + `tests/features/steps/` | `tests/run-bdd.sh` |
-| Static | shellcheck | every `*.sh` | `shellcheck plugins/**/*.sh scripts/*.sh tests/**/*.sh` |
+| Static | shellcheck | every `*.sh` | `shellcheck scripts/*.sh tests/**/*.sh` |
 
 ### Test Pyramid
 
@@ -308,11 +307,11 @@ The `/verify-code` skill enforces these as hard gates. Each gate specifies when 
 
 | Gate | Condition | Action | Pass Criteria |
 |------|-----------|--------|---------------|
-| Shellcheck | Always | `shellcheck plugins/**/*.sh tests/**/*.sh scripts/*.sh 2>/dev/null \|\| shellcheck $(find plugins tests scripts -name '*.sh')` | Exit code 0 |
+| Shellcheck | Always | `shellcheck scripts/*.sh tests/**/*.sh 2>/dev/null \|\| shellcheck $(find scripts tests -name '*.sh')` | Exit code 0 |
 | Unit Tests | `tests/unit/` directory exists | `bats tests/unit` | Exit code 0 |
 | Integration Tests | `tests/integration/` directory exists | `bats tests/integration` | Exit code 0 |
 | BDD Tests | `specs/*/feature.gherkin` files exist | `tests/run-bdd.sh` | Exit code 0 |
-| JSON validity | Always | `jq empty plugins/obsidian-memory/.claude-plugin/plugin.json plugins/obsidian-memory/hooks/hooks.json .claude-plugin/marketplace.json` | Exit code 0 |
+| JSON validity | Always | `jq empty .claude-plugin/plugin.json hooks/hooks.json` | Exit code 0 |
 
 ### Condition Evaluation Rules
 
@@ -347,7 +346,7 @@ None at install time. The plugin reads everything it needs from `~/.claude/obsid
 | Variable | Description |
 |----------|-------------|
 | `BATS_TEST_TMPDIR` | Provided by bats; test scratch directory. All test-written files live here. |
-| `PLUGIN_ROOT` | Set by the bats test helper to the absolute path of `plugins/obsidian-memory`. |
+| `PLUGIN_ROOT` | Set by the bats test helper to the absolute path of the repo root. |
 
 ---
 

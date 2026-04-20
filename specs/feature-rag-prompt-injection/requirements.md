@@ -152,8 +152,8 @@ Feature: RAG prompt injection hook
 | FR3 | Read `vaultPath` from config; exit 0 if missing or not a directory | Must | Guard against stale config |
 | FR4 | Tokenize prompt: lowercase, split on non-alphanumerics, drop configured stopwords, dedupe, keep tokens ≥4 chars, cap at 6 | Must | Keyword extraction |
 | FR5 | Build alternation regex `(kw1|kw2|…)` from keywords; exit 0 if no keywords survive filtering | Must | — |
-| FR6 | Enumerate `*.md` files under `$VAULT` excluding `claude-memory/projects/**`, `.obsidian/**`, `.trash/**`; prefer `rg --files`, fall back to `find` | Must | No feedback loop |
-| FR7 | Score each candidate by total hit count (`rg -c -i -o` or `grep -c -i -E`) | Must | — |
+| FR6 | Enumerate and score `*.md` files under `$VAULT` excluding `.obsidian/**` and `.trash/**` in a single pass; prefer `rg -c`, fall back to `find -prune … -print0 \| xargs -0 grep -c -i -E` | Must | Raw `.jsonl` transcripts under the `claude-memory/projects/` symlink are excluded implicitly by the `*.md` glob |
+| FR7 | Rank candidates by total hit count | Must | — |
 | FR8 | Select top 5 by descending hit count | Must | — |
 | FR9 | Emit `<vault-context source="obsidian" keywords="…">` with per-file `### <rel-path>  (hits: <N>)` + fenced excerpt (first match, -B 2 -A 8, capped at 600 bytes) | Must | Format contract |
 | FR10 | Exit 0 on every terminating path; log unexpected failures to stderr via `trap … ERR` | Must | Safety rule |
@@ -208,7 +208,7 @@ Not applicable. The hook has no user-facing UI. Its "output surface" is the `<va
 
 ### Internal Dependencies
 
-- [ ] `plugins/obsidian-memory/hooks/hooks.json` — declares `UserPromptSubmit → scripts/vault-rag.sh`
+- [ ] `hooks/hooks.json` — declares `UserPromptSubmit → scripts/vault-rag.sh`
 - [ ] `~/.claude/obsidian-memory/config.json` — written by `/obsidian-memory:setup` (feature-vault-setup)
 
 ### External Dependencies

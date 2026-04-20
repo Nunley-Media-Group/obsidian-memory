@@ -18,7 +18,7 @@
 | Testing | 3 | [ ] (deferred to #1 bats-core harness) |
 | **Total** | **8** | |
 
-Retroactive task breakdown. Implementation artefacts live in `plugins/obsidian-memory/scripts/vault-rag.sh` and `plugins/obsidian-memory/hooks/hooks.json`; testing phase is blocked on #1.
+Retroactive task breakdown. Implementation artefacts live in `scripts/vault-rag.sh` and `hooks/hooks.json`; testing phase is blocked on #1.
 
 ---
 
@@ -26,7 +26,7 @@ Retroactive task breakdown. Implementation artefacts live in `plugins/obsidian-m
 
 ### T001: Hook wiring
 
-**File(s)**: `plugins/obsidian-memory/hooks/hooks.json`
+**File(s)**: `hooks/hooks.json`
 **Type**: Create
 **Depends**: None
 **Acceptance**:
@@ -40,7 +40,7 @@ Retroactive task breakdown. Implementation artefacts live in `plugins/obsidian-m
 
 ### T002: Script prelude + safety traps + config guard
 
-**File(s)**: `plugins/obsidian-memory/scripts/vault-rag.sh` (lines ~1–23)
+**File(s)**: `scripts/vault-rag.sh` (lines ~1–23)
 **Type**: Create
 **Depends**: T001
 **Acceptance**:
@@ -51,7 +51,7 @@ Retroactive task breakdown. Implementation artefacts live in `plugins/obsidian-m
 
 ### T003: Prompt tokenizer + keyword filter
 
-**File(s)**: `plugins/obsidian-memory/scripts/vault-rag.sh` (lines ~25–47)
+**File(s)**: `scripts/vault-rag.sh` (lines ~25–47)
 **Type**: Create
 **Depends**: T002
 **Acceptance**:
@@ -64,20 +64,20 @@ Retroactive task breakdown. Implementation artefacts live in `plugins/obsidian-m
 
 ### T004: File enumeration, scoring, and ranking
 
-**File(s)**: `plugins/obsidian-memory/scripts/vault-rag.sh` (lines ~49–91)
+**File(s)**: `scripts/vault-rag.sh` (lines ~49–91)
 **Type**: Create
 **Depends**: T003
 **Acceptance**:
-- [x] `rg --files` fast-path with `--glob '!claude-memory/projects/**'`, `'!.obsidian/**'`, `'!.trash/**'` (FR6, AC5, AC6)
-- [x] POSIX fallback using `find -prune` over the same three paths (FR6, AC3)
-- [x] Per-file scoring: `rg -c -i -o -e REGEX` fast-path with `awk` sum; `grep -c -i -E` fallback (FR7)
+- [x] `rg -c` single-pass fast-path with `--glob '*.md'`, `'!.obsidian/**'`, `'!.trash/**'` (FR6, AC5, AC6)
+- [x] POSIX fallback: `find -prune` over `.obsidian` and `.trash` piped via `xargs -0 grep -c -i -E` (FR6, AC3)
+- [x] Single-pass scoring emits `N:path`; `awk` normalizes to `hits\tpath` (FR7)
 - [x] Sorted by descending hit count; `head -n 5` (FR8, AC11)
 - [x] Temp files cleaned via `trap 'rm -f … ; exit 0' EXIT`
 - [x] Empty candidate list or empty hit list → exit 0 (AC2)
 
 ### T005: Output formatter
 
-**File(s)**: `plugins/obsidian-memory/scripts/vault-rag.sh` (lines ~93–107)
+**File(s)**: `scripts/vault-rag.sh` (lines ~93–107)
 **Type**: Create
 **Depends**: T004
 **Acceptance**:

@@ -18,7 +18,7 @@
 | Testing | 3 | [ ] (deferred to #1 bats-core harness) |
 | **Total** | **9** | |
 
-Retroactive task breakdown. Implementation artefacts already exist in `plugins/obsidian-memory/scripts/vault-distill.sh` and `plugins/obsidian-memory/hooks/hooks.json`.
+Retroactive task breakdown. Implementation artefacts already exist in `scripts/vault-distill.sh` and `hooks/hooks.json`.
 
 ---
 
@@ -26,7 +26,7 @@ Retroactive task breakdown. Implementation artefacts already exist in `plugins/o
 
 ### T001: Hook wiring
 
-**File(s)**: `plugins/obsidian-memory/hooks/hooks.json`
+**File(s)**: `hooks/hooks.json`
 **Type**: Create
 **Depends**: None
 **Acceptance**:
@@ -41,7 +41,7 @@ Retroactive task breakdown. Implementation artefacts already exist in `plugins/o
 
 ### T002: Prelude, safety traps, and input guards
 
-**File(s)**: `plugins/obsidian-memory/scripts/vault-distill.sh` (lines ~1–40)
+**File(s)**: `scripts/vault-distill.sh` (lines ~1–40)
 **Type**: Create
 **Depends**: T001
 **Acceptance**:
@@ -54,7 +54,7 @@ Retroactive task breakdown. Implementation artefacts already exist in `plugins/o
 
 ### T003: Project slug derivation
 
-**File(s)**: `plugins/obsidian-memory/scripts/vault-distill.sh` (~line 43)
+**File(s)**: `scripts/vault-distill.sh` (~line 43)
 **Type**: Create
 **Depends**: T002
 **Acceptance**:
@@ -64,7 +64,7 @@ Retroactive task breakdown. Implementation artefacts already exist in `plugins/o
 
 ### T004: Transcript extraction + distillation subprocess
 
-**File(s)**: `plugins/obsidian-memory/scripts/vault-distill.sh` (~lines 45–98)
+**File(s)**: `scripts/vault-distill.sh` (~lines 45–98)
 **Type**: Create
 **Depends**: T003
 **Acceptance**:
@@ -78,7 +78,7 @@ Retroactive task breakdown. Implementation artefacts already exist in `plugins/o
 
 ### T005: Note file + Index.md updater
 
-**File(s)**: `plugins/obsidian-memory/scripts/vault-distill.sh` (~lines 100–157)
+**File(s)**: `scripts/vault-distill.sh` (~lines 100–157)
 **Type**: Create
 **Depends**: T004
 **Acceptance**:

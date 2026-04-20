@@ -179,7 +179,7 @@ Not applicable. The skill is a terminal-only Claude Code invocation; its "UI" is
 
 ### Internal Dependencies
 
-- [ ] `plugins/obsidian-memory/scripts/vault-rag.sh` — invoked for the smoke test in step 6
+- [ ] `scripts/vault-rag.sh` — invoked for the smoke test in step 6
 
 ### External Dependencies
 

@@ -28,14 +28,14 @@ Per `structure.md`, this is a pure hook-script tier feature. The skill tier is n
                           │ SessionEnd event
                           ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  plugins/obsidian-memory/hooks/hooks.json                       │
+│  hooks/hooks.json                       │
 │   SessionEnd[0].hooks[0].command =                              │
 │     ${CLAUDE_PLUGIN_ROOT}/scripts/vault-distill.sh              │
 └─────────────────────────┬───────────────────────────────────────┘
                           │ stdin JSON payload
                           ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│  plugins/obsidian-memory/scripts/vault-distill.sh               │
+│  scripts/vault-distill.sh               │
 │   1. guards: jq, claude, config readable, distill.enabled,     │
 │      payload non-empty, transcript readable, size ≥ 2 KB        │
 │   2. derive project slug from cwd                               │
@@ -100,7 +100,7 @@ awk:  insert after first /^## Sessions\s*$/ line; else append new ## Sessions se
 
 **Event**: `SessionEnd`
 
-**Wiring** (`plugins/obsidian-memory/hooks/hooks.json`):
+**Wiring** (`hooks/hooks.json`):
 
 ```json
 {
@@ -275,7 +275,7 @@ Not applicable. Output is Markdown files inside the Obsidian vault; the Obsidian
 
 | Layer | Type | Coverage |
 |-------|------|----------|
-| Shellcheck | Static | `shellcheck plugins/obsidian-memory/scripts/vault-distill.sh` — exit 0 |
+| Shellcheck | Static | `shellcheck scripts/vault-distill.sh` — exit 0 |
 | Integration (happy path) | bats + scratch vault + stub `claude` | Feed a fixture transcript; assert file creation + Index.md insert (AC1) |
 | Integration (stub mode) | bats with `claude` returning empty | AC3 — fallback stub is written |
 | Integration (skips) | bats | AC2 (trivial), AC6 (disabled), AC7 (no claude), AC8 (no jq), AC9 (no config), AC10 (bad transcript) |

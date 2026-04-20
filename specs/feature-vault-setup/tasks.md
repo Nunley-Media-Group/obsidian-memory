@@ -18,7 +18,7 @@
 | Testing | 3 | [ ] (deferred to #1 bats-core harness) |
 | **Total** | **6** | |
 
-This is a **retroactive** task breakdown. The implementation artefacts already exist in `plugins/obsidian-memory/skills/setup/SKILL.md`; the testing phase is not yet executable because the bats harness itself is tracked separately in #1.
+This is a **retroactive** task breakdown. The implementation artefacts already exist in `skills/setup/SKILL.md`; the testing phase is not yet executable because the bats harness itself is tracked separately in #1.
 
 ---
 
@@ -26,7 +26,7 @@ This is a **retroactive** task breakdown. The implementation artefacts already e
 
 ### T001: SKILL.md frontmatter + skill-runtime contract
 
-**File(s)**: `plugins/obsidian-memory/skills/setup/SKILL.md`
+**File(s)**: `skills/setup/SKILL.md`
 **Type**: Create
 **Depends**: None
 **Acceptance**:
@@ -40,7 +40,7 @@ This is a **retroactive** task breakdown. The implementation artefacts already e
 
 ### T002: Config + filesystem orchestration
 
-**File(s)**: `plugins/obsidian-memory/skills/setup/SKILL.md` (behaviour sections 1–4)
+**File(s)**: `skills/setup/SKILL.md` (behaviour sections 1–4)
 **Type**: Create
 **Depends**: T001
 **Acceptance**:
@@ -51,7 +51,7 @@ This is a **retroactive** task breakdown. The implementation artefacts already e
 
 ### T003: MCP registration + dependency probe + smoke test + final report
 
-**File(s)**: `plugins/obsidian-memory/skills/setup/SKILL.md` (behaviour sections 5–7)
+**File(s)**: `skills/setup/SKILL.md` (behaviour sections 5–7)
 **Type**: Create
 **Depends**: T002
 **Acceptance**:

@@ -28,19 +28,19 @@ Per `structure.md`, this skill sits in the **skill tier** and its only downstrea
                          │
                          ▼
 ┌────────────────────────────────────────────────────────────────┐
-│ plugins/obsidian-memory/skills/distill-session/SKILL.md        │
+│ skills/distill-session/SKILL.md        │
 │   1. check jq, claude, config.json                              │
 │   2. find newest ~/.claude/projects/**/*.jsonl → TRANSCRIPT     │
-│   3. derive SESSION_ID, CWD, REASON="manual"                    │
+│   3. derive SESSION_ID, CWD; REASON is set by the hook          │
 │   4. jq -n … → synthetic SessionEnd payload                     │
 │   5. pipe into vault-distill.sh                                 │
-│   6. read config, compute slug, locate newest note              │
+│   6. read config; locate newest note by mtime across sessions/  │
 │   7. report results (path + fallback-stub flag)                 │
 └──────────────────────┬─────────────────────────────────────────┘
                        │ stdin JSON payload
                        ▼
 ┌────────────────────────────────────────────────────────────────┐
-│ plugins/obsidian-memory/scripts/vault-distill.sh               │
+│ scripts/vault-distill.sh               │
 │   (same script that SessionEnd calls — see feature-session-    │
 │    distillation-hook / issue #11)                              │
 └────────────────────────┬───────────────────────────────────────┘
@@ -68,13 +68,12 @@ vault-distill.sh   ──▶ Writes new note + updates Index.md
    │
    ▼
 jq -r '.vaultPath' ~/.claude/obsidian-memory/config.json     ──▶ VAULT
-basename "$CWD" | tr … | sed …                               ──▶ SLUG
-ls -1t "$VAULT/claude-memory/sessions/$SLUG"/*.md | head -1  ──▶ LATEST
+find "$VAULT/claude-memory/sessions" -type f -name '*.md' -print0
+  | xargs -0 ls -1t | head -1                                ──▶ LATEST
    │
    ▼
 Print:
   - Transcript used: $TRANSCRIPT
-  - Project slug:   $SLUG
   - Output note:    $LATEST
   - Fallback stub?  (grep for "Distillation returned no content" marker)
 ```
@@ -87,7 +86,7 @@ Print:
 
 **Invocation**: `/obsidian-memory:distill-session` (no arguments)
 
-**Frontmatter** (`plugins/obsidian-memory/skills/distill-session/SKILL.md`):
+**Frontmatter** (`skills/distill-session/SKILL.md`):
 
 ```yaml
 name: distill-session
@@ -130,11 +129,10 @@ jq -n \
 
 # 5. Report
 VAULT="$(jq -r '.vaultPath' "$HOME/.claude/obsidian-memory/config.json")"
-SLUG="$(basename "$CWD" | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9-' '-' | sed -E 's/-+/-/g; s/^-|-$//g')"
-LATEST="$(ls -1t "$VAULT/claude-memory/sessions/$SLUG"/*.md 2>/dev/null | head -n 1)"
+LATEST="$(find "$VAULT/claude-memory/sessions" -type f -name '*.md' -print0 2>/dev/null \
+  | xargs -0 ls -1t 2>/dev/null | head -n 1)"
 
 echo "Transcript: $TRANSCRIPT"
-echo "Slug:       $SLUG"
 echo "Note:       $LATEST"
 if grep -q 'Distillation returned no content' "$LATEST" 2>/dev/null; then
   echo "Note type:  fallback stub (claude -p returned empty)"

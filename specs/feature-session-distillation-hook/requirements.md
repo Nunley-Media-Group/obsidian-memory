@@ -243,7 +243,7 @@ TRANSCRIPT: <up to ~200 KB of user+assistant messages>
 
 ### Internal Dependencies
 
-- [ ] `plugins/obsidian-memory/hooks/hooks.json` — declares `SessionEnd → scripts/vault-distill.sh`
+- [ ] `hooks/hooks.json` — declares `SessionEnd → scripts/vault-distill.sh`
 - [ ] `~/.claude/obsidian-memory/config.json` — written by `/obsidian-memory:setup`
 
 ### External Dependencies

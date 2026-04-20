@@ -1,6 +1,6 @@
 ---
 name: setup
-description: One-time, idempotent setup for the obsidian-memory plugin. Writes config, links the raw auto-memory folder into the vault, and optionally wires up the Obsidian MCP server. Use when the user says "set up obsidian memory", "configure obsidian-memory", "point obsidian-memory at my vault", "install obsidian memory", "link my vault", or invokes /obsidian-memory:setup. Safe to re-run.
+description: One-time idempotent setup for obsidian-memory — writes config, links ~/.claude/projects into the vault, and optionally registers the Obsidian MCP server. Use when the user says "set up obsidian memory", "configure obsidian-memory", "link my vault", or invokes /obsidian-memory:setup.
 argument-hint: <vault-path>
 allowed-tools: Bash, Read, Write, Edit, AskUserQuestion
 model: sonnet
@@ -122,6 +122,3 @@ Print a summary:
 | `claude mcp add` fails | Report the failure as non-fatal and continue |
 | `jq` or `claude` missing | Warn; the hooks will silently no-op until they are installed |
 
-## Integration with SDLC Workflow
-
-This skill is orthogonal to the nmg-sdlc pipeline. It configures a cross-cutting Claude Code capability (vault-backed memory) that benefits every pipeline step by giving Claude prior context on each prompt and preserving outcomes after each session. Run it once per machine; the other nmg-sdlc skills (`/draft-issue`, `/start-issue`, `/write-spec`, `/write-code`, `/verify-code`, `/open-pr`) then automatically benefit from retrieved vault context and produce new distilled notes on session end.

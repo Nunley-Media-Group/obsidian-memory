@@ -8,23 +8,20 @@ All code should follow these guidelines for consistency.
 ## Project Layout
 
 ```
-obsidian-memory/
+obsidian-memory/                        # repo root IS the plugin root
 ├── .claude-plugin/
-│   └── marketplace.json               # local plugin registry (dev aid; upstream is nmg-plugins)
-├── plugins/
-│   └── obsidian-memory/
-│       ├── .claude-plugin/
-│       │   └── plugin.json            # plugin manifest (name, version, description, keywords)
-│       ├── hooks/
-│       │   └── hooks.json             # hook → script wiring (UserPromptSubmit, SessionEnd)
-│       ├── scripts/
-│       │   ├── vault-rag.sh           # UserPromptSubmit: keyword RAG → <vault-context>
-│       │   └── vault-distill.sh       # SessionEnd: distill transcript → dated vault note
-│       └── skills/
-│           ├── setup/
-│           │   └── SKILL.md           # /obsidian-memory:setup <vault-path>
-│           └── distill-session/
-│               └── SKILL.md           # /obsidian-memory:distill-session (manual checkpoint)
+│   └── plugin.json                    # plugin manifest (name, version, description, keywords)
+├── hooks/
+│   └── hooks.json                     # hook → script wiring (UserPromptSubmit, SessionEnd)
+├── scripts/
+│   ├── _common.sh                     # shared preamble (config load, slug helper)
+│   ├── vault-rag.sh                   # UserPromptSubmit: keyword RAG → <vault-context>
+│   └── vault-distill.sh               # SessionEnd: distill transcript → dated vault note
+├── skills/
+│   ├── setup/
+│   │   └── SKILL.md                   # /obsidian-memory:setup <vault-path>
+│   └── distill-session/
+│       └── SKILL.md                   # /obsidian-memory:distill-session (manual checkpoint)
 ├── specs/                             # nmg-sdlc specs (one dir per feature / bug)
 │   └── <feature-slug>/
 │       ├── requirements.md
@@ -44,7 +41,7 @@ obsidian-memory/
 └── README.md
 ```
 
-Everything under `plugins/obsidian-memory/` is what Claude Code installs. Everything at the repo root outside `plugins/` (README, CHANGELOG, specs/, steering/, tests/) is development infrastructure and is not shipped to users.
+This repo is a **standalone plugin**. The plugin root is the repo root — `.claude-plugin/plugin.json`, `hooks/`, `scripts/`, and `skills/` are what Claude Code installs. Marketplace listings live in a separate upstream marketplace repo that references this one via `{ "source": { "source": "github", "repo": "Nunley-Media-Group/obsidian-memory" } }`. Everything else at the repo root (README, CHANGELOG, specs/, steering/, tests/) is development infrastructure and is not shipped to users.
 
 ---
 
@@ -115,7 +112,7 @@ Claude Code session-end event
 | Element | Convention | Example |
 |---------|------------|---------|
 | Top-level keys | `camelCase` in Claude Code manifests; `snake_case` in internal config | `"enabled": true`, `"vault_path": "..."` |
-| File names | `kebab-case.json` | `plugin.json`, `marketplace.json`, `hooks.json`, `config.json` |
+| File names | `kebab-case.json` | `plugin.json`, `hooks.json`, `config.json` |
 
 ### Markdown
 
