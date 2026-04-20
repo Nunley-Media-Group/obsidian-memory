@@ -1,0 +1,14 @@
+{
+  "name": "obsidian-memory",
+  "version": "0.1.0",
+  "description": "Cross-session memory backed by an Obsidian vault. Retrieves relevant notes on every prompt and distills each session into a dated vault entry.",
+  "author": {
+    "name": "Rich Nunley",
+    "email": "rnunley@nunleymediagroup.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nunleymediagroup/obsidian-memory"
+  },
+  "keywords": ["memory", "obsidian", "rag", "session", "hooks"]
+}
