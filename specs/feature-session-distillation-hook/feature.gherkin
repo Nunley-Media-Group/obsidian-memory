@@ -1,0 +1,132 @@
+# File: tests/features/vault-distill.feature
+#
+# Generated from: specs/feature-session-distillation-hook/requirements.md
+# Issue: #11
+
+Feature: Session distillation hook
+  As a Claude Code + Obsidian user who ends many short sessions
+  I want each finished session automatically distilled into a dated Markdown note in my vault
+  So that my vault accumulates browseable memory without manual note-taking
+
+  Background:
+    Given a scratch HOME at "$BATS_TEST_TMPDIR/home"
+    And a scratch Obsidian vault at "$BATS_TEST_TMPDIR/vault"
+    And obsidian-memory is installed and setup against "$VAULT"
+    And a stub "claude" CLI is on PATH returning a fixed distillation by default
+
+  # --- Happy Path ---
+
+  Scenario: A non-trivial session ends and is distilled
+    Given a transcript at "$HOME/.claude/projects/my-proj/<sid>.jsonl" of size 5000 bytes
+    And "distill.enabled" is true
+    When SessionEnd fires with {transcript_path, cwd="/path/to/my-proj", session_id, reason="clear"}
+    Then a new file exists under "$VAULT/claude-memory/sessions/my-proj/" matching "^\\d{4}-\\d{2}-\\d{2}-\\d{6}\\.md$"
+    And the file starts with "---" frontmatter
+    And the frontmatter contains "project: my-proj", "end_reason: clear", "source: claude-code"
+    And the body is the stub "claude" output
+    And "$VAULT/claude-memory/Index.md" has a new link line immediately under "## Sessions"
+    And the hook exit code is 0
+
+  # --- Edge Case ---
+
+  Scenario: Trivial session is skipped
+    Given a transcript of size 1500 bytes
+    When SessionEnd fires with that transcript_path
+    Then no file was created under "$VAULT/claude-memory/sessions/"
+    And "$VAULT/claude-memory/Index.md" is unchanged
+    And the hook exit code is 0
+
+  Scenario: Distillation returns empty — fallback stub written
+    Given the stub "claude" CLI is configured to return an empty string
+    And a valid 5000-byte transcript
+    When SessionEnd fires
+    Then the created note's body is the fallback stub
+    And the body contains "Distillation returned no content. See transcript:"
+    And "$VAULT/claude-memory/Index.md" still gained a link line
+    And the hook exit code is 0
+
+  # --- Alternative Paths ---
+
+  Scenario: Index.md does not exist yet
+    Given "$VAULT/claude-memory/Index.md" does not exist
+    When a successful distillation runs
+    Then "$VAULT/claude-memory/Index.md" is created
+    And it contains "# Claude Memory Index"
+    And it contains "## Sessions"
+    And it contains the new link line
+    And the hook exit code is 0
+
+  Scenario: Index.md exists but has no "## Sessions" heading
+    Given "$VAULT/claude-memory/Index.md" exists with content "# My custom index\n\nSome user notes here.\n"
+    When a successful distillation runs
+    Then "$VAULT/claude-memory/Index.md" still contains "# My custom index" and "Some user notes here."
+    And "$VAULT/claude-memory/Index.md" ends with a "## Sessions" section containing the new link line
+    And the hook exit code is 0
+
+  Scenario: Distillation disabled via config
+    Given "distill.enabled" is false in the config
+    When SessionEnd fires with a valid transcript
+    Then no note file was created
+    And "$VAULT/claude-memory/Index.md" was not modified
+    And the stub "claude" CLI was not invoked
+    And the hook exit code is 0
+
+  # --- Error Handling — silent ---
+
+  Scenario: Missing claude CLI
+    Given "claude" is unavailable on the hook subshell PATH
+    When SessionEnd fires
+    Then no file writes occur
+    And the hook exit code is 0
+
+  Scenario: Missing jq dependency
+    Given "jq" is unavailable on the hook subshell PATH
+    When SessionEnd fires
+    Then no file writes occur
+    And the hook exit code is 0
+
+  Scenario: Missing config file
+    Given "$HOME/.claude/obsidian-memory/config.json" does not exist
+    When SessionEnd fires
+    Then no file writes occur
+    And the hook exit code is 0
+
+  Scenario: Unreadable transcript path
+    Given the SessionEnd payload references "/nonexistent/path.jsonl"
+    When the hook fires
+    Then no note file is created
+    And the hook exit code is 0
+
+  # --- Security ---
+
+  Scenario: Project slug sanitization prevents path escape
+    Given the session "cwd" is "/some/path/My Weird & Project/../etc"
+    When the hook derives the slug
+    Then the slug matches "^[a-z0-9-]+$"
+    And the slug does not contain ".." or "/"
+    And any resulting write is strictly under "$VAULT/claude-memory/sessions/"
+
+  Scenario: Nested claude CLI receives CLAUDECODE cleared
+    Given the parent Claude Code process exported "CLAUDECODE=1"
+    And the stub "claude" is configured in "env_echo" mode so it echoes "$CLAUDECODE"
+    When SessionEnd fires with a valid 5000-byte transcript
+    Then the stub's captured "CLAUDECODE" value is an empty string
+    And the child did not abort with "Cannot be launched inside another Claude Code session"
+
+  # --- Performance / Edge ---
+
+  Scenario: Large transcript is capped at 200 KB
+    Given a transcript whose extracted conversation would exceed 200 KB
+    When SessionEnd fires
+    Then the prompt piped to "claude -p" is <= 204800 bytes
+    And the hook completes successfully
+    And a note file is created
+
+  Scenario: Mixed content-array and content-string messages
+    Given a transcript JSONL with some messages having "content" as an array of parts and others as a plain string
+    And the array parts include "text", "tool_use", and "tool_result" types
+    When the hook extracts the conversation
+    Then both content shapes are flattened to newline-joined text
+    And "tool_use" parts render as "[tool_use: <name>]"
+    And "tool_result" parts render as stringified content
+    And the resulting note is created successfully

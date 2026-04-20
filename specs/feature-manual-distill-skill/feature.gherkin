@@ -1,0 +1,76 @@
+# File: tests/features/distill-session-skill.feature
+#
+# Generated from: specs/feature-manual-distill-skill/requirements.md
+# Issue: #12
+
+Feature: Manual distill-session skill
+  As a Claude Code + Obsidian user mid-session
+  I want a manual command that runs the same distillation the SessionEnd hook runs
+  So that I can checkpoint a long session without waiting to exit
+
+  Background:
+    Given a scratch HOME at "$BATS_TEST_TMPDIR/home"
+    And a scratch Obsidian vault at "$BATS_TEST_TMPDIR/vault"
+    And obsidian-memory is installed and setup against "$VAULT"
+    And a stub "claude" CLI is on PATH returning a fixed distillation by default
+
+  # --- Happy Path ---
+
+  Scenario: Manual distillation during an active session
+    Given a transcript at "$HOME/.claude/projects/my-proj/<sid>.jsonl" of size 5000 bytes
+    And the user's current working directory is "/path/to/my-proj"
+    When the user runs "/obsidian-memory:distill-session"
+    Then the skill identifies the newest ".jsonl" under "$HOME/.claude/projects/" as "$TRANSCRIPT"
+    And the skill pipes a payload with "reason" equal to "manual" into "vault-distill.sh"
+    And a new file exists under "$VAULT/claude-memory/sessions/my-proj/" matching "^\\d{4}-\\d{2}-\\d{2}-\\d{6}\\.md$"
+    And the note's frontmatter "end_reason" field is "manual"
+    And the skill prints the note path
+
+  # --- Error Handling ---
+
+  Scenario: No transcripts exist
+    Given "$HOME/.claude/projects/" contains no "*.jsonl" files
+    When the user runs "/obsidian-memory:distill-session"
+    Then the skill reports "no Claude Code transcripts found"
+    And the skill stops without calling "vault-distill.sh"
+    And no new file was created under "$VAULT/claude-memory/sessions/"
+
+  Scenario: Missing jq dependency
+    Given "jq" is unavailable on PATH
+    When the user runs "/obsidian-memory:distill-session"
+    Then the skill reports the missing "jq" dependency
+    And the skill stops without invoking "vault-distill.sh"
+
+  Scenario: Missing claude CLI
+    Given "claude" is unavailable on PATH
+    When the user runs "/obsidian-memory:distill-session"
+    Then the skill reports the missing "claude" dependency
+    And the skill stops without invoking "vault-distill.sh"
+
+  # --- Idempotency ---
+
+  Scenario: Re-running produces a new timestamped note
+    Given a previous manual distillation produced "sessions/my-proj/2026-04-19-143022.md"
+    When the user runs "/obsidian-memory:distill-session" again 2 seconds later
+    Then a new file "sessions/my-proj/2026-04-19-143024.md" exists
+    And the previous file "sessions/my-proj/2026-04-19-143022.md" is unchanged
+    And both files are listed under "## Sessions" in "$VAULT/claude-memory/Index.md"
+
+  # --- Alternative Paths ---
+
+  Scenario: Project slug derived from CWD
+    Given the user's current working directory is "/path/to/My Weird & Project"
+    When the user runs "/obsidian-memory:distill-session"
+    Then the payload "cwd" field equals "/path/to/My Weird & Project"
+    And the resulting note is under "$VAULT/claude-memory/sessions/my-weird-project/"
+    And the slug in the skill's report equals "my-weird-project"
+
+  # --- Edge Case ---
+
+  Scenario: Underlying distillation returned empty — fallback stub detected
+    Given the stub "claude" CLI is configured to return an empty string
+    And a valid 5000-byte transcript
+    When the user runs "/obsidian-memory:distill-session"
+    Then the skill reports "fallback stub" for the produced note
+    And still prints the note path
+    And the skill itself exits successfully

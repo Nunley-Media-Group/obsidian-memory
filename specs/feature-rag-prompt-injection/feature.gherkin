@@ -1,0 +1,114 @@
+# File: tests/features/vault-rag.feature
+#
+# Generated from: specs/feature-rag-prompt-injection/requirements.md
+# Issue: #10
+
+Feature: RAG prompt injection hook
+  As a Claude Code + Obsidian user working across many projects
+  I want relevant prior notes from my vault surfaced automatically on every prompt
+  So that Claude answers with continuity from past sessions without manual copy-paste
+
+  Background:
+    Given a scratch HOME at "$BATS_TEST_TMPDIR/home"
+    And a scratch Obsidian vault at "$BATS_TEST_TMPDIR/vault"
+    And obsidian-memory is installed and setup against "$VAULT"
+
+  # --- Happy Path ---
+
+  Scenario: A vault note contains a keyword from the prompt
+    Given a vault file "my-note.md" containing "jq is used for config parsing"
+    When the user submits a prompt containing "How do I use jq for config parsing?"
+    Then the hook stdout contains a "<vault-context source=\"obsidian\"" opening tag
+    And the block contains the relative path "my-note.md"
+    And the block contains the excerpt text "jq is used for config parsing"
+    And the block closes with "</vault-context>"
+    And the hook exit code is 0
+
+  Scenario: Top-5 ranking and excerpt format
+    Given 10 vault notes each matching the prompt with a known hit count
+    When the hook runs against a prompt matching the shared keyword
+    Then the "<vault-context>" block lists exactly 5 notes
+    And the notes are ordered by descending hit count
+    And each listed note has a "### <rel-path>  (hits: <N>)" header
+    And each excerpt is fenced in triple-backticks
+    And each excerpt is no more than 600 bytes
+
+  # --- Happy Path — silent ---
+
+  Scenario: No matching notes
+    Given a vault whose ".md" files contain no prompt keywords
+    When the user submits a prompt with no overlapping tokens
+    Then the hook emits no "<vault-context>" block
+    And the hook exit code is 0
+
+  # --- Alternative Paths ---
+
+  Scenario: "rg" is not on PATH — POSIX fallback
+    Given "rg" is unavailable in the hook subshell
+    And a vault file "my-note.md" contains the text "ripgrep not needed"
+    When the user submits a prompt containing "ripgrep"
+    Then the hook still emits a "<vault-context>" block for "my-note.md"
+    And scoring used "grep -c -i -E" rather than "rg -c"
+    And the hook exit code is 0
+
+  Scenario: RAG disabled via config
+    Given the config file has "rag.enabled" set to false
+    When the user submits any prompt
+    Then the hook emits no output on stdout
+    And the hook did not enumerate files under "$VAULT"
+    And the hook exit code is 0
+
+  # --- Edge Cases — exclusion list ---
+
+  Scenario: Auto-memory projects symlink is excluded
+    Given "$VAULT/claude-memory/projects/some-project/2026-04-18.jsonl" contains "jq"
+    And no other file in "$VAULT" contains "jq"
+    When the user submits a prompt containing "jq"
+    Then the hook emits no "<vault-context>" block
+    And the hook exit code is 0
+
+  Scenario: Obsidian metadata directories are excluded
+    Given "$VAULT/.obsidian/workspace.json" contains the prompt keyword
+    And "$VAULT/.trash/deleted-note.md" contains the prompt keyword
+    And no other file contains the keyword
+    When the user submits a matching prompt
+    Then the hook emits no "<vault-context>" block
+    And the hook exit code is 0
+
+  # --- Error Handling — silent ---
+
+  Scenario: Missing jq dependency
+    Given "jq" is unavailable in the hook subshell
+    When the user submits any prompt
+    Then the hook emits no output on stdout
+    And the hook exit code is 0
+
+  Scenario: Missing config file
+    Given "$HOME/.claude/obsidian-memory/config.json" does not exist
+    When the user submits any prompt
+    Then the hook emits no output on stdout
+    And the hook exit code is 0
+
+  # --- Edge Cases — tokenizer ---
+
+  Scenario: Stopwords are filtered
+    Given a vault with arbitrary content
+    When the user submits a prompt that contains only stopwords
+    Then the hook emits no "<vault-context>" block
+    And the hook exit code is 0
+
+  Scenario: Keyword cap of 6 is enforced
+    Given a prompt containing 20 distinct non-stopword tokens of length >= 4
+    When the hook tokenizes the prompt
+    Then the alternation regex contains at most 6 alternatives
+    And the "keywords" attribute of the "<vault-context>" block lists at most 6 tokens
+
+  # --- Security ---
+
+  Scenario: Prompt containing shell metacharacters is safe
+    Given a vault file "note.md" containing "safe keyword test"
+    When the user submits a prompt containing "$(whoami) ; rm -rf /  `echo x`  'injection' \"quote\""
+    Then no subshell is spawned from prompt content
+    And no "whoami" output appears in the hook output
+    And the hook exits 0
+    And any "<vault-context>" block contains only literal keyword text

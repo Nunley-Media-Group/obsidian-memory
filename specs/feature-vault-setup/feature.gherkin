@@ -1,0 +1,88 @@
+# File: tests/features/setup.feature
+#
+# Generated from: specs/feature-vault-setup/requirements.md
+# Issue: #9
+
+Feature: Vault setup skill
+  As a Claude Code + Obsidian power user
+  I want a single one-time command that points obsidian-memory at my vault
+  So that every future Claude Code session on every project benefits from vault-backed memory
+
+  Background:
+    Given a scratch HOME at "$BATS_TEST_TMPDIR/home"
+    And a scratch Obsidian vault at "$BATS_TEST_TMPDIR/vault"
+
+  # --- Happy Path ---
+
+  Scenario: First-run setup against a real vault
+    Given no file exists at "$HOME/.claude/obsidian-memory/config.json"
+    When the user runs "/obsidian-memory:setup $VAULT"
+    Then "$HOME/.claude/obsidian-memory/config.json" exists
+    And its "vaultPath" field equals "$VAULT"
+    And its "rag.enabled" field is true
+    And its "distill.enabled" field is true
+    And "$VAULT/claude-memory/sessions/" is a directory
+    And "$VAULT/claude-memory/projects" is a symlink pointing at "$HOME/.claude/projects"
+    And "$VAULT/claude-memory/Index.md" exists
+    And "$VAULT/claude-memory/Index.md" contains "# Claude Memory Index"
+    And "$VAULT/claude-memory/Index.md" contains "## Sessions"
+
+  # --- Idempotency ---
+
+  Scenario: Re-running setup is a no-op
+    Given setup has already completed successfully against "$VAULT"
+    And "$HOME/.claude/obsidian-memory/config.json" has an extra user key "notes.enabled" set to true
+    When the user runs "/obsidian-memory:setup $VAULT" a second time
+    Then the "vaultPath" field still equals "$VAULT"
+    And the "notes.enabled" user key is still true
+    And "$VAULT/claude-memory/Index.md" is unchanged from the previous run
+    And "$VAULT/claude-memory/projects" still points at "$HOME/.claude/projects"
+
+  # --- Error Handling ---
+
+  Scenario: Vault path does not exist
+    Given the path "$BATS_TEST_TMPDIR/no-such-vault" does not exist
+    When the user runs "/obsidian-memory:setup $BATS_TEST_TMPDIR/no-such-vault"
+    Then setup reports that the vault path does not exist
+    And "$HOME/.claude/obsidian-memory/config.json" was not created
+    And no directory was created under "$BATS_TEST_TMPDIR/no-such-vault"
+
+  Scenario: "projects" exists as a non-symlink
+    Given "$VAULT/claude-memory/projects" is a regular directory (not a symlink)
+    And "$VAULT/claude-memory/projects/user-file.md" exists
+    When the user runs "/obsidian-memory:setup $VAULT"
+    Then setup refuses to delete "$VAULT/claude-memory/projects"
+    And "$VAULT/claude-memory/projects/user-file.md" still exists
+    And setup prints a message instructing the user to move or remove it manually
+    And "$HOME/.claude/obsidian-memory/config.json" was still created
+
+  # --- Alternative Paths ---
+
+  Scenario: Stale symlink is atomically repointed
+    Given "$VAULT/claude-memory/projects" is a symlink pointing at "/tmp/stale"
+    When the user runs "/obsidian-memory:setup $VAULT"
+    Then "$VAULT/claude-memory/projects" now points at "$HOME/.claude/projects"
+    And no user data under "$VAULT" was deleted
+
+  Scenario: Optional MCP registration on opt-in
+    Given the user answers "Yes" to the MCP registration prompt
+    When the user runs "/obsidian-memory:setup $VAULT"
+    Then the command "claude mcp add -s user obsidian --transport websocket ws://localhost:22360" was invoked
+    And a non-zero exit from "claude mcp add" is reported as non-fatal
+
+  Scenario: Optional MCP registration on skip
+    Given the user answers "Skip" to the MCP registration prompt
+    When the user runs "/obsidian-memory:setup $VAULT"
+    Then the command "claude mcp add" was not invoked
+    And setup still completes the filesystem steps
+
+  # --- Edge Case ---
+
+  Scenario: Missing deps at setup time
+    Given "jq" is not on PATH
+    And "claude" is not on PATH
+    When the user runs "/obsidian-memory:setup $VAULT"
+    Then "$HOME/.claude/obsidian-memory/config.json" was still created
+    And "$VAULT/claude-memory/sessions/" still exists
+    And the final report lists "jq" and "claude" as missing
+    And setup exits successfully
