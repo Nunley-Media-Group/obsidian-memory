@@ -1,0 +1,98 @@
+# File: specs/feature-set-up-bats-core-cucumber-shell-test-harness/feature.gherkin
+#
+# Generated from: specs/feature-set-up-bats-core-cucumber-shell-test-harness/requirements.md
+# Issue: #1
+
+Feature: bats-core + cucumber-shell test harness
+  As a plugin maintainer
+  I want a working test harness wired to the declared Verification Gates
+  So that every future change to hook scripts and skills is verified, not eyeballed
+
+  Background:
+    Given a scratch HOME at "$BATS_TEST_TMPDIR/home"
+    And a scratch Obsidian vault at "$BATS_TEST_TMPDIR/vault"
+    And the harness is installed at "$PLUGIN_ROOT/tests"
+
+  # --- Happy Path: unit + integration gates ---
+
+  Scenario: bats unit harness runs green on a placeholder test
+    Given a placeholder test at "$PLUGIN_ROOT/tests/unit/smoke.bats" asserting "true"
+    When the developer runs "bats tests/unit"
+    Then the command exits 0
+    And the output reports at least one passing test
+
+  Scenario: bats integration harness runs green on a placeholder test
+    Given a placeholder test at "$PLUGIN_ROOT/tests/integration/smoke.bats" asserting "true"
+    When the developer runs "bats tests/integration"
+    Then the command exits 0
+    And the output reports at least one passing test
+
+  # --- Safety: real vault is never touched ---
+
+  Scenario: integration tests never touch the operator's real vault
+    Given the integration harness loads "$PLUGIN_ROOT/tests/helpers/scratch.bash"
+    And the real "$REAL_HOME/.claude" state is snapshotted before the test
+    When every test under "tests/integration/" runs to completion
+    Then "$HOME" during each test equals "$BATS_TEST_TMPDIR/home"
+    And the real "$REAL_HOME/.claude" state is byte-identical after the test
+    And no file was created under "$REAL_HOME/.claude" or the operator's real vault
+
+  # --- BDD runner contract ---
+
+  Scenario: BDD runner executes a feature and passes when every step is defined
+    Given a feature file "$PLUGIN_ROOT/specs/example/feature.gherkin" with one scenario
+    And a matching step definition at "$PLUGIN_ROOT/tests/features/steps/example.sh"
+    When the developer runs "tests/run-bdd.sh"
+    Then the runner exits 0
+    And the output reports the example scenario as passed
+
+  Scenario: BDD runner exits non-zero when a step is undefined
+    Given a feature file "$PLUGIN_ROOT/specs/example/feature.gherkin" with one scenario
+    And the step definition file "$PLUGIN_ROOT/tests/features/steps/example.sh" has been removed
+    When the developer runs "tests/run-bdd.sh"
+    Then the runner exits with code 2
+    And stderr contains "undefined step"
+
+  # --- Shellcheck gate ---
+
+  Scenario: shellcheck gate passes on every committed *.sh file
+    Given "shellcheck" is installed
+    When the developer runs the shellcheck gate command from "steering/tech.md"
+    Then the command exits 0
+    And no finding is reported against any file under "scripts/" or "tests/"
+
+  # --- JSON validity gate ---
+
+  Scenario: jq validates every plugin manifest
+    Given "jq" is installed
+    When the developer runs "jq empty .claude-plugin/plugin.json hooks/hooks.json"
+    Then the command exits 0
+
+  # --- Documentation ---
+
+  Scenario: README Development section documents install and run commands
+    Given a new contributor reads "$PLUGIN_ROOT/README.md"
+    When they search for a "Development" or "Testing" section
+    Then they find install commands for "bats-core", "cucumber-shell" (or its hand-rolled equivalent), and "shellcheck" for both macOS and Linux
+    And they find the three run commands: "bats tests/unit", "bats tests/integration", "tests/run-bdd.sh"
+
+  # --- /verify-code gate sweep ---
+
+  Scenario: every Verification Gate from steering/tech.md exits 0 on the current repo
+    Given the harness is installed and the baseline specs have their step definitions in place
+    When the developer runs each command from "steering/tech.md" §Verification Gates in order
+    Then every command exits 0
+    And the command strings in "steering/tech.md" are byte-identical to those in "tests/run-bdd.sh" and "tests/integration/gate_sweep.bats"
+
+  # --- Baseline feature integration (the scope-expansion ask) ---
+
+  Scenario: baseline shipped features pass every Gherkin scenario
+    Given step definitions exist for "specs/feature-vault-setup/" (#9)
+    And step definitions exist for "specs/feature-rag-prompt-injection/" (#10)
+    And step definitions exist for "specs/feature-session-distillation-hook/" (#11)
+    And step definitions exist for "specs/feature-manual-distill-skill/" (#12)
+    And a deterministic fake "claude" binary is available on "$PATH" for distillation scenarios
+    When the developer runs "tests/run-bdd.sh"
+    Then every scenario across all four baseline feature files passes
+    And the runner exits 0
+    And no file was written under "$REAL_HOME/.claude" or the operator's real vault during the run

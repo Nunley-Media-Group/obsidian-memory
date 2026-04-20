@@ -42,6 +42,48 @@ skills/setup/SKILL.md
 skills/distill-session/SKILL.md
 ```
 
+## Development
+
+Install the test toolchain once per machine:
+
+```bash
+# macOS (Homebrew)
+brew install bats-core shellcheck jq
+
+# Linux (Debian/Ubuntu)
+sudo apt install bats shellcheck jq
+
+# Linux (any distro, manual)
+git clone https://github.com/bats-core/bats-core.git && cd bats-core && ./install.sh /usr/local
+# shellcheck: https://github.com/koalaman/shellcheck/releases (precompiled binary)
+# jq:         https://stedolan.github.io/jq/download/
+```
+
+`cucumber-shell` is hand-rolled in this repo as `tests/run-bdd.sh` — no external
+install step. The runner supports the Gherkin subset used by
+`specs/*/feature.gherkin` (Feature, Background, Scenario, Given/When/Then/And/But,
+quoted-literal arguments, `#` line comments).
+
+Run the Verification Gates documented in [`steering/tech.md`](steering/tech.md#verification-gates):
+
+```bash
+bats tests/unit                                              # unit gate
+bats tests/integration                                       # integration gate
+tests/run-bdd.sh                                             # BDD gate (cucumber-shell)
+shellcheck scripts/*.sh tests/**/*.sh                        # static-analysis gate
+jq empty .claude-plugin/plugin.json hooks/hooks.json          # JSON-validity gate
+```
+
+Expected output: `ok N passing` / `NN scenarios, NN passed, 0 failed, 0 undefined steps`,
+non-zero exit on any failure. `steering/tech.md` §Verification Gates is the
+authoritative source of each gate's command string — `tests/run-bdd.sh` and
+`tests/integration/gate_sweep.bats` mirror it byte-for-byte.
+
+Safety: every test runs under a scratch `$HOME` and scratch vault via
+`tests/helpers/scratch.bash`. An `assert_home_untouched` backstop in the helper
+digests `$HOME/.claude` before each integration test and fails the test if the
+real state changed during the run.
+
 ## Referencing from a marketplace
 
 A separate marketplace repo points at this repo's root via a GitHub source:
