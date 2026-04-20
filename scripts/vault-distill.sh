@@ -4,6 +4,7 @@
 # concise Obsidian note, and writes it under
 # <vault>/claude-memory/sessions/<project-slug>/YYYY-MM-DD-HHMMSS.md.
 
+# shellcheck source=scripts/_common.sh
 . "$(dirname "$0")/_common.sh"
 om_load_config distill
 
@@ -39,9 +40,10 @@ OUT_FILE="$OUT_DIR/${NOW_STAMP}.md"
 # shapes the transcript JSONL uses. Cap at ~200 KB.
 CONVO="$(
   jq -r '
-    select(.type == "user" or .type == "assistant")
-    | .message as $m
-    | if ($m.content | type) == "array" then
+    . as $entry
+    | select($entry.type == "user" or $entry.type == "assistant")
+    | $entry.message as $m
+    | (if ($m.content | type) == "array" then
         ($m.content
           | map(
               if .type == "text" then .text
@@ -53,9 +55,9 @@ CONVO="$(
           | join("\n"))
       elif ($m.content | type) == "string" then $m.content
       else empty
-      end
-    | select(length > 0)
-    | "[\(.type | ascii_upcase)]\n\(.)\n"
+      end) as $body
+    | select($body | length > 0)
+    | "[\($entry.type | ascii_upcase)]\n\($body)\n"
   ' "$TRANSCRIPT" 2>/dev/null | head -c 204800
 )"
 [ -n "$CONVO" ] || exit 0
@@ -103,6 +105,7 @@ NOTE_BODY="$(CLAUDECODE="" claude -p "$PROMPT" 2>/dev/null)"
   if [ -n "$NOTE_BODY" ]; then
     printf '%s\n' "$NOTE_BODY"
   else
+    # shellcheck disable=SC2016
     printf '## Summary\n\nDistillation returned no content. See transcript: `%s`\n' "$TRANSCRIPT"
   fi
 } > "$OUT_FILE" 2>/dev/null || exit 0
@@ -120,7 +123,7 @@ if [ ! -f "$INDEX" ]; then
   } > "$INDEX" 2>/dev/null || exit 0
 else
   TMP="$(mktemp "${TMPDIR:-/tmp}/vault-index.XXXXXX")"
-  awk -v line="$LINK_LINE" '
+  if awk -v line="$LINK_LINE" '
     { print }
     !inserted && /^## Sessions[[:space:]]*$/ {
       print ""
@@ -135,7 +138,11 @@ else
         print line
       }
     }
-  ' "$INDEX" > "$TMP" 2>/dev/null && mv "$TMP" "$INDEX" 2>/dev/null || rm -f "$TMP"
+  ' "$INDEX" > "$TMP" 2>/dev/null; then
+    mv "$TMP" "$INDEX" 2>/dev/null || rm -f "$TMP"
+  else
+    rm -f "$TMP"
+  fi
 fi
 
 exit 0

@@ -1,0 +1,16 @@
+# File: specs/example/feature.gherkin
+#
+# Example — safe to delete once real specs have step definitions.
+# This file exists so `tests/run-bdd.sh` always has at least one scenario to
+# exercise (happy-path coverage of AC3). Removing `tests/features/steps/example.sh`
+# exercises the undefined-step negative path (AC3 negative).
+
+Feature: BDD runner exercises a trivial scenario
+  As the harness author
+  I want one deterministic scenario that always passes
+  So that tests/run-bdd.sh has a known-good subject on a clean clone
+
+  Scenario: A trivial truth holds
+    Given the example placeholder is loaded
+    When the runner evaluates a trivial assertion
+    Then the assertion is true

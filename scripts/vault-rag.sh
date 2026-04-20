@@ -6,6 +6,7 @@
 # Runs on every user prompt, so the scoring pass is a single rg/grep invocation
 # rather than one subprocess per file.
 
+# shellcheck source=scripts/_common.sh
 . "$(dirname "$0")/_common.sh"
 om_load_config rag
 
@@ -55,7 +56,7 @@ else
   find "$VAULT" \
       \( -path "$VAULT/.obsidian" -o -path "$VAULT/.trash" \) -prune \
       -o -type f -name '*.md' -print0 2>/dev/null \
-    | xargs -0 grep -c -i -E -e "$REGEX" 2>/dev/null \
+    | xargs -0 grep -c -i -H -E -e "$REGEX" 2>/dev/null \
     | awk 'BEGIN{OFS="\t"} { i=length($0); while (i>0 && substr($0,i,1)!=":") i--;
         if (i==0) next; n=substr($0,i+1); p=substr($0,1,i-1); if (n+0>0) print n, p }' \
     | sort -rn -k1,1 \
@@ -74,6 +75,7 @@ printf '%s\n' "$TOP" | while IFS=$'\t' read -r hits path; do
   printf '\n### %s  (hits: %s)\n' "$rel" "$hits"
   excerpt="$(grep -n -i -E -B 2 -A 8 -m 1 "$REGEX" "$path" 2>/dev/null | head -c 600)"
   if [ -n "$excerpt" ]; then
+    # shellcheck disable=SC2016
     printf '```\n%s\n```\n' "$excerpt"
   fi
 done
