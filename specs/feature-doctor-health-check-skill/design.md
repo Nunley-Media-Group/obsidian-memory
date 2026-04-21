@@ -98,7 +98,7 @@ OK    vault_path     /Users/x/Vault
 OK    jq             /opt/homebrew/bin/jq (jq-1.7)
 OK    claude         /Users/x/.local/bin/claude
 OK    sessions_dir   /Users/x/Vault/claude-memory/sessions
-OK    projects_link  /Users/x/Vault/claude-memory/projects → /Users/x/.claude/projects
+OK    projects_symlink /Users/x/Vault/claude-memory/projects → /Users/x/.claude/projects
 OK    rag_enabled    true
 OK    distill_enabled true
 INFO  ripgrep        /opt/homebrew/bin/rg

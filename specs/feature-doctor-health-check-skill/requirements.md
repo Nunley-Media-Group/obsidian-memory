@@ -99,58 +99,7 @@ Failure modes (each becomes its own Gherkin scenario via Scenario Outline):
 **And** each check value is one of `"ok"`, `"fail"`, or `"info"`
 **And** exit code matches: 0 when `ok` is `true`, non-zero otherwise
 
----
-
-### Generated Gherkin Preview
-
-```gherkin
-Feature: Doctor health-check reports install state
-  As a Claude Code + Obsidian user who just installed obsidian-memory
-  I want a one-command health check that tells me whether my install is working
-  So that silent hook no-ops do not leave me believing memory is flowing when it isn't
-
-  Scenario: Healthy install passes all checks
-    Given a healthy obsidian-memory install in a scratch $HOME
-    When I run /obsidian-memory:doctor
-    Then every check reports OK
-    And the exit code is 0
-
-  Scenario Outline: Specific failure modes report a remediation hint
-    Given <failure-mode> in a scratch $HOME
-    When I run /obsidian-memory:doctor
-    Then the output contains "FAIL: <reason>"
-    And the output contains "<hint>"
-    And the exit code is non-zero
-    Examples:
-      | failure-mode              | reason                          | hint                               |
-      | missing config            | config file missing             | /obsidian-memory:setup             |
-      | vaultPath missing         | vaultPath missing from config   | /obsidian-memory:setup             |
-      | vaultPath not a directory | vault path does not exist       | /obsidian-memory:setup             |
-      | jq not on PATH            | jq not on PATH                  | brew install jq                    |
-      | claude not on PATH        | claude not on PATH              | Claude Code CLI                    |
-      | projects symlink broken   | projects symlink                | /obsidian-memory:setup             |
-      | sessions dir missing      | sessions directory              | /obsidian-memory:setup             |
-      | rag disabled              | rag.enabled is false            | /obsidian-memory:toggle rag on     |
-      | distill disabled          | distill.enabled is false        | /obsidian-memory:toggle distill on |
-
-  Scenario: Doctor is read-only
-    Given a snapshot of every mtime under the scratch $HOME
-    When I run /obsidian-memory:doctor in any state
-    Then no file or symlink under the scratch $HOME is created, modified, or removed
-
-  Scenario: ripgrep missing is informational, not failing
-    Given a healthy install but ripgrep is not on PATH
-    When I run /obsidian-memory:doctor
-    Then the output contains "INFO: ripgrep"
-    And the exit code is 0
-
-  Scenario: --json emits a machine-readable report
-    Given a healthy install
-    When I run /obsidian-memory:doctor --json
-    Then stdout is a single JSON object
-    And the object has an "ok" boolean equal to true
-    And the exit code is 0
-```
+See [feature.gherkin](feature.gherkin) for the canonical BDD scenarios.
 
 ---
 
@@ -253,8 +202,8 @@ Doctor has no GUI. Its "UI" is terminal output.
 
 ## Open Questions
 
-- [ ] Should the `INFO:` lines for optional deps also include the MCP server registration status? (Recommended: yes; it matches user mental model.) — Resolved in design as *yes*, surfaced as `INFO`.
-- [ ] Should `--json` output include the remediation hint text, or only `"fail"`? (Recommended: include `hint` field per check; cheap to add, useful for scripts.) — Resolved in design as *include `hint`*.
+- [x] Should the `INFO:` lines for optional deps also include the MCP server registration status? (Recommended: yes; it matches user mental model.) — Resolved in design as *yes*, surfaced as `INFO`.
+- [x] Should `--json` output include the remediation hint text, or only `"fail"`? (Recommended: include `hint` field per check; cheap to add, useful for scripts.) — Resolved in design as *include `hint`*.
 
 ---
 

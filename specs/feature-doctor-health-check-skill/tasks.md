@@ -13,12 +13,11 @@
 |-------|-------|--------|
 | Setup | 1 | [ ] |
 | Backend | 2 | [ ] |
-| Frontend | 0 | [ ] |
 | Integration | 1 | [ ] |
 | Testing | 3 | [ ] |
 | **Total** | 7 | |
 
-"Backend" here means the shell implementation; "Integration" means the user-facing skill wrapper. obsidian-memory has no UI layer, so Phase 3 is intentionally empty.
+"Backend" means the shell implementation; "Integration" means the user-facing skill wrapper.
 
 ---
 
@@ -95,13 +94,7 @@
 
 ---
 
-## Phase 3: Frontend Implementation
-
-*Not applicable — obsidian-memory has no UI layer. The skill wrapper is the user-facing surface and is covered under Phase 4.*
-
----
-
-## Phase 4: Integration
+## Phase 3: Integration
 
 ### T004: Write `skills/doctor/SKILL.md`
 
