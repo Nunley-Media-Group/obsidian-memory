@@ -1,0 +1,96 @@
+# File: specs/feature-doctor-health-check-skill/feature.gherkin
+#
+# Generated from: specs/feature-doctor-health-check-skill/requirements.md
+# Issue: #2
+#
+# AC5 (tests run against scratch $HOME) is not a standalone scenario — it is an
+# invariant of the Background block: every scenario in this file runs under the
+# bats scratch harness (tests/helpers/scratch.bash), which redirects $HOME to
+# $BATS_TEST_TMPDIR/home before any step fires. The read-only assertion in the
+# "Doctor is read-only" scenario further proves the invariant holds end-to-end.
+
+Feature: Doctor health-check reports install state
+  As a Claude Code + Obsidian user who just installed obsidian-memory
+  I want a one-command health check that tells me whether my install is actually working
+  So that silent hook no-ops do not leave me believing memory is flowing when it isn't
+
+  Background:
+    Given a scratch $HOME at "$BATS_TEST_TMPDIR/home"
+    And   a scratch vault at "$BATS_TEST_TMPDIR/vault"
+
+  # --- Happy Path ---
+
+  Scenario: Healthy install passes all checks
+    Given a valid obsidian-memory config pointing at the scratch vault
+    And   the vault contains "claude-memory/sessions/"
+    And   the vault has a valid "claude-memory/projects" symlink to "$HOME/.claude/projects"
+    And   "jq" is on PATH
+    And   "claude" is on PATH
+    And   "rag.enabled" is true and "distill.enabled" is true in the config
+    When  I run "/obsidian-memory:doctor"
+    Then  every check line starts with "OK" or "INFO"
+    And   the output contains "All checks passed."
+    And   the exit code is 0
+
+  # --- Failure Modes (one row per failure in requirements.md AC2) ---
+
+  Scenario Outline: Specific failure modes report a remediation hint
+    Given a baseline-healthy obsidian-memory install in the scratch $HOME
+    And   <failure-condition>
+    When  I run "/obsidian-memory:doctor"
+    Then  the output contains "FAIL"
+    And   the output contains "<reason-substring>"
+    And   the output contains "<hint-substring>"
+    And   the exit code is non-zero
+
+    Examples:
+      | failure-condition                                                | reason-substring           | hint-substring                  |
+      | the config file "$HOME/.claude/obsidian-memory/config.json" is absent | config                    | /obsidian-memory:setup          |
+      | the config is present but has no "vaultPath" key                 | vaultPath                  | /obsidian-memory:setup          |
+      | "vaultPath" points at a non-existent directory                   | does not exist             | /obsidian-memory:setup          |
+      | "jq" is not on PATH                                              | jq                         | brew install jq                 |
+      | "claude" is not on PATH                                          | claude                     | Claude Code CLI                 |
+      | "claude-memory/projects" symlink is broken                       | projects                   | /obsidian-memory:setup          |
+      | "claude-memory/sessions/" does not exist                         | sessions                   | /obsidian-memory:setup          |
+      | "rag.enabled" is set to false in the config                      | rag.enabled                | /obsidian-memory:toggle rag on  |
+      | "distill.enabled" is set to false in the config                  | distill.enabled            | /obsidian-memory:toggle distill on |
+
+  # --- Read-Only Invariant ---
+
+  Scenario: Doctor is read-only across any state
+    Given a snapshot of the scratch $HOME and scratch vault trees
+    When  I run "/obsidian-memory:doctor" in the healthy state
+    And   I run "/obsidian-memory:doctor" in a partially broken state
+    And   I run "/obsidian-memory:doctor" in a fully broken state
+    Then  the tree snapshots are unchanged after every invocation
+    And   no symlink under the scratch $HOME has been created, removed, or retargeted
+
+  # --- Optional Dependencies ---
+
+  Scenario: Missing ripgrep is informational, not failing
+    Given a baseline-healthy obsidian-memory install in the scratch $HOME
+    And   "rg" is not on PATH
+    When  I run "/obsidian-memory:doctor"
+    Then  the output contains "INFO"
+    And   the output contains "ripgrep"
+    And   the exit code is 0
+
+  # --- JSON Output ---
+
+  Scenario: --json emits a machine-readable report on a healthy install
+    Given a baseline-healthy obsidian-memory install in the scratch $HOME
+    When  I run "/obsidian-memory:doctor --json"
+    Then  stdout is a single JSON object
+    And   the object has a top-level "ok" field equal to true
+    And   the object has a "checks" field containing at minimum "config", "vault_path", "jq", "claude", "sessions_dir", "projects_symlink", "rag_enabled", "distill_enabled"
+    And   the exit code is 0
+
+  Scenario: --json emits a machine-readable report on a broken install
+    Given a baseline-healthy obsidian-memory install in the scratch $HOME
+    And   "vaultPath" points at a non-existent directory
+    When  I run "/obsidian-memory:doctor --json"
+    Then  stdout is a single JSON object
+    And   the object has a top-level "ok" field equal to false
+    And   the "checks.vault_path.status" field equals "fail"
+    And   the "checks.vault_path.hint" field contains "/obsidian-memory:setup"
+    And   the exit code is non-zero
