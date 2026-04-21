@@ -1,5 +1,5 @@
 # tests/features/steps/doctor.sh — step definitions for
-# specs/feature-doctor-health-check-skill/feature.gherkin (#2).
+# specs/feature-doctor-health-check-skill/feature.gherkin.
 #
 # Exercises scripts/vault-doctor.sh end-to-end against the scratch harness.
 # No real mutation of the operator's $HOME; all state lives under
@@ -14,14 +14,10 @@ D_STDERR=""
 D_RC=0
 D_SNAPSHOT=""
 
-_doctor_config() {
-  printf '%s' "$HOME/.claude/obsidian-memory/config.json"
-}
-
 _doctor_write_config() {
   local rag="$1" distill="$2"
   local cfg
-  cfg="$(_doctor_config)"
+  cfg="$(_config_path)"
   mkdir -p "$(dirname "$cfg")"
   cat > "$cfg" <<EOF
 {"vaultPath":"$VAULT","rag":{"enabled":$rag},"distill":{"enabled":$distill}}
@@ -80,11 +76,7 @@ _doctor_tree_digest() {
 
 _doctor_run() {
   D_STDERR="$(mktemp "$BATS_TEST_TMPDIR/doctor.err.XXXXXX")"
-  if [ -n "${1:-}" ]; then
-    D_STDOUT="$("$PLUGIN_ROOT/scripts/vault-doctor.sh" "$1" 2>"$D_STDERR")"
-  else
-    D_STDOUT="$("$PLUGIN_ROOT/scripts/vault-doctor.sh" 2>"$D_STDERR")"
-  fi
+  D_STDOUT="$("$PLUGIN_ROOT/scripts/vault-doctor.sh" "$@" 2>"$D_STDERR")"
   D_RC=$?
 }
 
@@ -102,16 +94,16 @@ given_a_baseline_healthy_obsidian_memory_install() {
 }
 
 given_no_config_file_exists() {
-  rm -f "$(_doctor_config)"
-  [ ! -e "$(_doctor_config)" ]
+  rm -f "$(_config_path)"
+  [ ! -e "$(_config_path)" ]
 }
 
 given_the_config_has_no_key() {
   # Arg: "vaultPath"
   local key="${1:-vaultPath}"
-  mkdir -p "$(dirname "$(_doctor_config)")"
+  mkdir -p "$(dirname "$(_config_path)")"
   # Write a config with everything EXCEPT the specified key.
-  cat > "$(_doctor_config)" <<EOF
+  cat > "$(_config_path)" <<EOF
 {"rag":{"enabled":true},"distill":{"enabled":true}}
 EOF
   # Guard against unused-arg warnings.
@@ -120,8 +112,8 @@ EOF
 
 given_the_config_has_pointing_at_a_non_existent_directory() {
   # Arg: "vaultPath" (literal) — the key whose value should be bogus.
-  mkdir -p "$(dirname "$(_doctor_config)")"
-  cat > "$(_doctor_config)" <<EOF
+  mkdir -p "$(dirname "$(_config_path)")"
+  cat > "$(_config_path)" <<EOF
 {"vaultPath":"$BATS_TEST_TMPDIR/does-not-exist","rag":{"enabled":true},"distill":{"enabled":true}}
 EOF
 }
@@ -164,7 +156,7 @@ given_a_snapshot_of_the_scratch_vault_and_obsidian_memory_config_is_taken() {
 when_i_run() {
   local cmd="${1:-}"
   case "$cmd" in
-    "/obsidian-memory:doctor")        _doctor_run "" ;;
+    "/obsidian-memory:doctor")        _doctor_run ;;
     "/obsidian-memory:doctor --json") _doctor_run "--json" ;;
     *) return 1 ;;
   esac

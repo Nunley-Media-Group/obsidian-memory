@@ -47,6 +47,7 @@ _record() {
 # --- Probe helpers -----------------------------------------------------------
 
 _jq_available=1
+_claude_available=1
 _config_readable=0
 _vault_path=""
 
@@ -112,6 +113,7 @@ probe_claude() {
     _record "claude" "fail" \
       "claude not on PATH" \
       "install the Claude Code CLI; see https://docs.claude.com/claude-code"
+    _claude_available=0
   fi
 }
 
@@ -178,39 +180,22 @@ _flag_enabled() {
   printf '%s' "$val"
 }
 
-probe_rag_enabled() {
+probe_flag_enabled() {
+  local feature="$1"
   if [ "$_config_readable" -ne 1 ] || [ "$_jq_available" -ne 1 ]; then
-    _record "rag_enabled" "fail" \
-      "cannot check rag.enabled — config or jq missing" \
+    _record "${feature}_enabled" "fail" \
+      "cannot check ${feature}.enabled — config or jq missing" \
       "run /obsidian-memory:setup <vault>"
     return
   fi
   local val
-  val="$(_flag_enabled rag)"
+  val="$(_flag_enabled "$feature")"
   if [ "$val" = "true" ]; then
-    _record "rag_enabled" "ok" "true"
+    _record "${feature}_enabled" "ok" "true"
   else
-    _record "rag_enabled" "fail" \
-      "rag.enabled is false in config" \
-      "run /obsidian-memory:toggle rag on"
-  fi
-}
-
-probe_distill_enabled() {
-  if [ "$_config_readable" -ne 1 ] || [ "$_jq_available" -ne 1 ]; then
-    _record "distill_enabled" "fail" \
-      "cannot check distill.enabled — config or jq missing" \
-      "run /obsidian-memory:setup <vault>"
-    return
-  fi
-  local val
-  val="$(_flag_enabled distill)"
-  if [ "$val" = "true" ]; then
-    _record "distill_enabled" "ok" "true"
-  else
-    _record "distill_enabled" "fail" \
-      "distill.enabled is false in config" \
-      "run /obsidian-memory:toggle distill on"
+    _record "${feature}_enabled" "fail" \
+      "${feature}.enabled is false in config" \
+      "run /obsidian-memory:toggle ${feature} on"
   fi
 }
 
@@ -224,21 +209,25 @@ probe_ripgrep() {
 }
 
 probe_mcp() {
-  if ! command -v claude >/dev/null 2>&1; then
+  if [ "$_claude_available" -ne 1 ]; then
     _record "mcp" "info" "claude not on PATH — mcp status unknown"
     return
   fi
 
-  local out rc
+  # Keep `|| rc=$?` so the ERR trap doesn't fire when claude itself exits non-zero.
+  local out rc=0
   if command -v timeout >/dev/null 2>&1; then
-    out="$(timeout 3 claude mcp list 2>/dev/null || true)"
-    rc=$?
+    out="$(timeout 3 claude mcp list 2>/dev/null)" || rc=$?
   else
-    out="$(claude mcp list 2>/dev/null || true)"
-    rc=$?
+    out="$(claude mcp list 2>/dev/null)" || rc=$?
   fi
 
-  if [ "$rc" -ne 0 ] && [ "$rc" -ne 124 ] && [ -z "$out" ]; then
+  if [ "$rc" -eq 124 ]; then
+    _record "mcp" "info" "mcp status unknown (claude mcp list timed out)"
+    return
+  fi
+
+  if [ "$rc" -ne 0 ] && [ -z "$out" ]; then
     _record "mcp" "info" "mcp status unknown"
     return
   fi
@@ -299,15 +288,16 @@ emit_human() {
 }
 
 emit_json() {
-  if ! command -v jq >/dev/null 2>&1; then
+  local ok=true i n="${#PROBE_KEYS[@]}"
+  for (( i = 0; i < n; i++ )); do
+    if [ "${PROBE_STATUS[$i]}" = "fail" ]; then ok=false; break; fi
+  done
+
+  if [ "$_jq_available" -ne 1 ]; then
     # Fallback: hand-assembled JSON. Strings have no special chars in practice
     # (paths + ASCII hints), but we still quote conservatively.
-    local i ok=true n="${#PROBE_KEYS[@]}" first=1
-    printf '{"ok":'
-    for (( i = 0; i < n; i++ )); do
-      if [ "${PROBE_STATUS[$i]}" = "fail" ]; then ok=false; break; fi
-    done
-    printf '%s,"checks":{' "$ok"
+    local first=1
+    printf '{"ok":%s,"checks":{' "$ok"
     for (( i = 0; i < n; i++ )); do
       if [ "$first" -eq 0 ]; then printf ','; fi
       first=0
@@ -328,12 +318,6 @@ emit_json() {
     return
   fi
 
-  local ok=true i n="${#PROBE_KEYS[@]}"
-  for (( i = 0; i < n; i++ )); do
-    if [ "${PROBE_STATUS[$i]}" = "fail" ]; then ok=false; break; fi
-  done
-
-  # Build the checks object via jq -n with --arg pairs for each probe.
   local args=()
   for (( i = 0; i < n; i++ )); do
     args+=( --arg "k$i" "${PROBE_KEYS[$i]}" )
@@ -344,18 +328,15 @@ emit_json() {
 
   # shellcheck disable=SC2016  # $ok is a jq variable, not a shell expansion
   local filter='{ok: $ok, checks: {}}'
-  local idx
   for (( i = 0; i < n; i++ )); do
-    idx="$i"
-    # Assemble check entry matching the declared schema.
     filter="$filter
-      | .checks[\$k${idx}] = (
-          if \$s${idx} == \"fail\" then
-            {status: \$s${idx}, reason: \$d${idx}, hint: \$h${idx}}
-          elif \$s${idx} == \"info\" then
-            {status: \$s${idx}, note: \$d${idx}}
+      | .checks[\$k${i}] = (
+          if \$s${i} == \"fail\" then
+            {status: \$s${i}, reason: \$d${i}, hint: \$h${i}}
+          elif \$s${i} == \"info\" then
+            {status: \$s${i}, note: \$d${i}}
           else
-            {status: \$s${idx}}
+            {status: \$s${i}}
           end
         )"
   done
@@ -403,8 +384,8 @@ main() {
   probe_claude
   probe_sessions_dir
   probe_projects_symlink
-  probe_rag_enabled
-  probe_distill_enabled
+  probe_flag_enabled rag
+  probe_flag_enabled distill
   probe_ripgrep
   probe_mcp
 

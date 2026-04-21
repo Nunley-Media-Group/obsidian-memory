@@ -223,6 +223,8 @@ EOF
   [ "$(printf '%s' "$output" | jq -r '.checks.projects_symlink.status')" = "ok" ]
   [ "$(printf '%s' "$output" | jq -r '.checks.rag_enabled.status')" = "ok" ]
   [ "$(printf '%s' "$output" | jq -r '.checks.distill_enabled.status')" = "ok" ]
+  [ "$(printf '%s' "$output" | jq -r '.checks.ripgrep.status')" = "info" ]
+  [ "$(printf '%s' "$output" | jq -r '.checks.mcp.status')" = "info" ]
 }
 
 @test "--json emits ok=false with per-check hint on broken install" {
