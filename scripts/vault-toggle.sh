@@ -19,15 +19,16 @@ set -u
 CONFIG="${HOME}/.claude/obsidian-memory/config.json"
 TMP=""
 
+log_err() {
+  printf 'ERROR: %s\n' "$*" >&2
+}
+
 # shellcheck disable=SC2329  # invoked indirectly by the EXIT trap
 cleanup() {
   [ -n "$TMP" ] && rm -f "$TMP" 2>/dev/null
 }
 trap cleanup EXIT
-
-log_err() {
-  printf 'ERROR: %s\n' "$*" >&2
-}
+trap 'log_err "failed at line $LINENO"; exit 1' ERR
 
 usage_stderr() {
   cat >&2 <<'USAGE'
@@ -54,36 +55,27 @@ normalize_state() {
   esac
 }
 
-# Read .<feature>.enabled from the config, normalising unset/null to "true".
-# Used for status output and for computing the flipped value in cmd_flip.
+# Raw read: "true" / "false" if explicitly set, empty string if unset/null.
+# An unset flag is deliberately NOT treated as "already in state" — the user
+# expects an explicit write so the stanza lands in the config (design.md →
+# Risks → "unset ambiguity"). Callers normalise empty → "true" for reporting.
+# jq's `//` operator fires on both null and false, so we test for null
+# explicitly to distinguish "unset" from "set to false".
 read_flag() {
   local feature="$1"
-  jq -r "(.${feature}.enabled != false) | tostring" "$CONFIG" 2>/dev/null
-}
-
-# Raw read: "true" / "false" if explicitly set, empty string if unset/null.
-# Used by cmd_set to decide whether the mutation is a no-op. An unset flag is
-# NOT "already in state" — the user expects an explicit write so the stanza
-# lands in the config (design.md → Risks → "unset ambiguity").
-read_flag_raw() {
-  local feature="$1"
-  jq -r ".${feature}.enabled? // empty | tostring" "$CONFIG" 2>/dev/null
+  jq -r ".${feature}.enabled? as \$v | if \$v == null then \"\" else \$v | tostring end" "$CONFIG" 2>/dev/null
 }
 
 # Atomically rewrite the config with .<feature>.enabled = <bool>.
 write_flag() {
   local feature="$1" value="$2"
   TMP="$CONFIG.tmp.$$"
-  if ! jq --indent 2 --argjson v "$value" ".${feature}.enabled = \$v" "$CONFIG" > "$TMP"; then
-    log_err "failed to write config"
-    return 1
-  fi
-  if ! mv "$TMP" "$CONFIG"; then
+  if ! jq --indent 2 --argjson v "$value" ".${feature}.enabled = \$v" "$CONFIG" > "$TMP" \
+     || ! mv "$TMP" "$CONFIG"; then
     log_err "failed to write config"
     return 1
   fi
   TMP=""
-  return 0
 }
 
 ensure_preconditions() {
@@ -116,7 +108,7 @@ cmd_set() {
   ensure_preconditions
 
   local raw
-  raw="$(read_flag_raw "$feature")"
+  raw="$(read_flag "$feature")"
 
   if [ "$raw" = "$new_value" ]; then
     printf '%s.enabled was already %s\n' "$feature" "$raw"
@@ -125,8 +117,6 @@ cmd_set() {
 
   write_flag "$feature" "$new_value" || exit 1
 
-  # Report the effective prior value (unset → "true") so the output always
-  # shows a concrete boolean rather than an empty prev field.
   local prev="$raw"
   [ -n "$prev" ] || prev="true"
   printf '%s.enabled: %s -> %s\n' "$feature" "$prev" "$new_value"
@@ -138,6 +128,7 @@ cmd_flip() {
 
   local current new
   current="$(read_flag "$feature")"
+  [ -n "$current" ] || current="true"
   if [ "$current" = "true" ]; then new="false"; else new="true"; fi
 
   write_flag "$feature" "$new" || exit 1
