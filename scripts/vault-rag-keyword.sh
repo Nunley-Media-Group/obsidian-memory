@@ -35,16 +35,10 @@ KW_ATTR="$(printf '%s' "$KEYWORDS" | paste -sd ',' -)"
 TMP_HITS="$(mktemp "${TMPDIR:-/tmp}/vault-rag.XXXXXX")"
 trap 'rm -f "$TMP_HITS" 2>/dev/null; exit 0' EXIT
 
-if command -v rg >/dev/null 2>&1; then
-  HAVE_RG=1
-else
-  HAVE_RG=0
-fi
-
 # Single-pass scoring: one process walks the whole vault. rg/grep emit
 # "path:count"; awk flips that to "count<TAB>path" for downstream sort/head.
 # Splitting on the LAST ':' guards against paths that contain ':'.
-if [ "$HAVE_RG" = 1 ]; then
+if command -v rg >/dev/null 2>&1; then
   rg -c -i --no-messages \
       --glob '*.md' \
       --glob '!.obsidian/**' \
@@ -67,12 +61,9 @@ fi
 
 [ -s "$TMP_HITS" ] || exit 0
 
-TOP="$(head -n 5 "$TMP_HITS")"
-[ -n "$TOP" ] || exit 0
-
 printf '<vault-context source="obsidian" keywords="%s">\n' "$KW_ATTR"
 
-printf '%s\n' "$TOP" | while IFS=$'\t' read -r hits path; do
+head -n 5 "$TMP_HITS" | while IFS=$'\t' read -r hits path; do
   rel="${path#"$VAULT"/}"
   printf '\n### %s  (hits: %s)\n' "$rel" "$hits"
   excerpt="$(grep -n -i -E -B 2 -A 8 -m 1 "$REGEX" "$path" 2>/dev/null | head -c 600)"

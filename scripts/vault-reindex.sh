@@ -106,7 +106,7 @@ log_info "model:    $MODEL"
 log_info "vault:    $VAULT"
 
 # Probe ollama reachability with a HEAD/GET to the root.
-if ! curl -sS --max-time 5 -o /dev/null -w '%{http_code}' "$ENDPOINT/" >/dev/null 2>&1; then
+if ! curl -sS --max-time 5 -o /dev/null "$ENDPOINT/" 2>/dev/null; then
   log_err "ollama unreachable at $ENDPOINT — start the daemon (ollama serve) and try again"
   exit 1
 fi
@@ -132,7 +132,6 @@ find "$VAULT" \
   > "$NOTES_LIST" 2>/dev/null
 
 TOTAL="$(wc -l < "$NOTES_LIST" | tr -d '[:space:]')"
-[ -n "$TOTAL" ] || TOTAL=0
 
 if [ "$TOTAL" -eq 0 ]; then
   log_err "no .md notes found under $VAULT (after exclusions)"

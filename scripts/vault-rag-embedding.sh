@@ -18,9 +18,26 @@ om_load_config rag
 
 log_err() { printf '[%s] %s\n' "$(basename "$0")" "$*" >&2; }
 
+TMP_RESP=""
+TMP_IDX=""
+TMP_RANK=""
+TMP_OUT=""
+
+# shellcheck disable=SC2329  # invoked indirectly by the EXIT/ERR traps
+cleanup_embed() {
+  [ -n "$TMP_RESP" ] && rm -f "$TMP_RESP" 2>/dev/null
+  [ -n "$TMP_IDX" ]  && rm -f "$TMP_IDX"  2>/dev/null
+  [ -n "$TMP_RANK" ] && rm -f "$TMP_RANK" 2>/dev/null
+  [ -n "$TMP_OUT" ]  && rm -f "$TMP_OUT"  2>/dev/null
+}
+
 # Override _common.sh's exit-0 ERR trap: an unexpected failure in the embedding
-# path should signal fallback to the dispatcher, not a silent success.
-trap 'log_err "failed at line $LINENO"; exit 1' ERR
+# path should signal fallback to the dispatcher, not a silent success. The
+# one-stderr-line-per-fallback invariant depends on `set -o pipefail` staying
+# unset — do NOT enable pipefail here or the ERR trap will double-fire on the
+# explicit `exit 1` branches below.
+trap 'cleanup_embed; log_err "failed at line $LINENO"; exit 1' ERR
+trap 'cleanup_embed' EXIT
 
 PAYLOAD="$(om_read_payload)" || { log_err "empty payload"; exit 1; }
 PROMPT="$(printf '%s' "$PAYLOAD" | jq -r '.prompt // empty' 2>/dev/null)"
@@ -30,8 +47,13 @@ PROMPT="$(printf '%s' "$PAYLOAD" | jq -r '.prompt // empty' 2>/dev/null)"
 
 command -v curl >/dev/null 2>&1 || { log_err "curl missing"; exit 1; }
 
-ENDPOINT="$(jq -r '.rag.embedding.endpoint // "http://127.0.0.1:11434"' "$CONFIG" 2>/dev/null)"
-MODEL="$(jq -r '.rag.embedding.model // "nomic-embed-text"' "$CONFIG" 2>/dev/null)"
+IFS=$'\t' read -r ENDPOINT MODEL TOP_K < <(
+  jq -r '[
+    (.rag.embedding.endpoint // "http://127.0.0.1:11434"),
+    (.rag.embedding.model    // "nomic-embed-text"),
+    (.rag.top_k              // 5 | tostring)
+  ] | join("\t")' "$CONFIG" 2>/dev/null
+)
 
 # Warn on non-loopback endpoints so operators notice data is leaving the host.
 case "$ENDPOINT" in
@@ -39,38 +61,22 @@ case "$ENDPOINT" in
   *) log_err "non-loopback embedding endpoint: $ENDPOINT" ;;
 esac
 
-TOP_K_RAW="$(jq -r '.rag.top_k // 5' "$CONFIG" 2>/dev/null)"
-TOP_K="$TOP_K_RAW"
 if ! printf '%s' "$TOP_K" | grep -qE '^[0-9]+$' || [ "$TOP_K" -lt 1 ] || [ "$TOP_K" -gt 50 ]; then
-  log_err "rag.top_k=$TOP_K_RAW out of range; clamping to 5"
+  log_err "rag.top_k=$TOP_K out of range; clamping to 5"
   TOP_K=5
 fi
 
 INDEX_DIR="$HOME/.claude/obsidian-memory/index"
 INDEX_FILE="$INDEX_DIR/embeddings.jsonl"
 
-if [ ! -f "$INDEX_FILE" ]; then
-  log_err "index missing — run /obsidian-memory:reindex"
-  exit 1
-fi
-if [ ! -s "$INDEX_FILE" ]; then
-  log_err "index empty — run /obsidian-memory:reindex"
-  exit 1
-fi
+[ -s "$INDEX_FILE" ] || { log_err "index missing or empty — run /obsidian-memory:reindex"; exit 1; }
 
-# --- Scratch files + cleanup -------------------------------------------------
+# --- Scratch files -----------------------------------------------------------
 
 TMP_RESP="$(mktemp "${TMPDIR:-/tmp}/vault-rag-embed-resp.XXXXXX")"
 TMP_IDX="$(mktemp "${TMPDIR:-/tmp}/vault-rag-embed-idx.XXXXXX")"
 TMP_RANK="$(mktemp "${TMPDIR:-/tmp}/vault-rag-embed-rank.XXXXXX")"
 TMP_OUT="$(mktemp "${TMPDIR:-/tmp}/vault-rag-embed-out.XXXXXX")"
-
-# shellcheck disable=SC2329  # invoked indirectly by the EXIT/ERR traps
-cleanup_embed() {
-  rm -f "$TMP_RESP" "$TMP_IDX" "$TMP_RANK" "$TMP_OUT" 2>/dev/null
-}
-trap 'cleanup_embed; log_err "failed at line $LINENO"; exit 1' ERR
-trap 'cleanup_embed' EXIT
 
 # --- Embed the prompt --------------------------------------------------------
 

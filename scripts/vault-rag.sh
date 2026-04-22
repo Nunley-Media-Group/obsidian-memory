@@ -13,8 +13,11 @@
 # branch can replay the payload into the keyword backend.
 
 # shellcheck source=scripts/_common.sh
-. "$(dirname "$0")/_common.sh"
+SCRIPT_DIR="$(dirname "$0")"
+. "$SCRIPT_DIR/_common.sh"
 om_load_config rag
+
+log_err() { printf '[%s] %s\n' "$(basename "$0")" "$*" >&2; }
 
 PAYLOAD="$(om_read_payload)" || exit 0
 
@@ -22,10 +25,7 @@ PAYLOAD_TMP="$(mktemp "${TMPDIR:-/tmp}/vault-rag-payload.XXXXXX")"
 trap 'rm -f "$PAYLOAD_TMP" 2>/dev/null; exit 0' EXIT
 printf '%s' "$PAYLOAD" > "$PAYLOAD_TMP"
 
-log_err() { printf '[%s] %s\n' "$(basename "$0")" "$*" >&2; }
-
 BACKEND="$(jq -r '.rag.backend // "keyword"' "$CONFIG" 2>/dev/null)"
-SCRIPT_DIR="$(dirname "$0")"
 
 case "$BACKEND" in
   keyword)
