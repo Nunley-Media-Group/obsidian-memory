@@ -1,3 +1,6 @@
 # SDLC runner config
 sdlc-config.json
 .claude/sdlc-state.json
+
+# SDLC runner artifacts
+.claude/unattended-mode

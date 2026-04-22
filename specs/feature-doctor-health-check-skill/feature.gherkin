@@ -1,0 +1,152 @@
+# File: specs/feature-doctor-health-check-skill/feature.gherkin
+#
+# Generated from: specs/feature-doctor-health-check-skill/requirements.md
+# Issue: #2
+#
+# AC5 (tests run against scratch $HOME) is not a standalone scenario — it is an
+# invariant of the Background block: every scenario in this file runs under the
+# bats scratch harness (tests/helpers/scratch.bash), which redirects $HOME to
+# $BATS_TEST_TMPDIR/home before any step fires. The read-only assertion in the
+# "Doctor is read-only" scenario further proves the invariant holds end-to-end.
+#
+# Scenario Outline is not supported by tests/run-bdd.sh, so each failure mode
+# from requirements.md AC2 (F1..F9) has an explicit Scenario below.
+
+Feature: Doctor health-check reports install state
+  As a Claude Code + Obsidian user who just installed obsidian-memory
+  I want a one-command health check that tells me whether my install is actually working
+  So that silent hook no-ops do not leave me believing memory is flowing when it isn't
+
+  Background:
+    Given a scratch $HOME at "$BATS_TEST_TMPDIR/home"
+    And   a scratch Obsidian vault at "$BATS_TEST_TMPDIR/vault"
+    And   a safe PATH with a stub claude is installed
+
+  # --- Happy Path ---
+
+  Scenario: Healthy install passes all checks
+    Given a baseline-healthy obsidian-memory install
+    When  I run "/obsidian-memory:doctor"
+    Then  the doctor output contains "All checks passed."
+    And   the doctor output does not contain "FAIL"
+    And   the doctor exit code is 0
+
+  # --- Failure Modes F1-F9 (from requirements.md AC2) ---
+
+  Scenario: F1 — Config file missing reports FAIL with setup hint
+    Given no config file exists
+    When  I run "/obsidian-memory:doctor"
+    Then  the doctor output contains "FAIL"
+    And   the doctor output contains "config"
+    And   the doctor output contains "/obsidian-memory:setup"
+    And   the doctor exit code is non-zero
+
+  Scenario: F2 — vaultPath missing from config reports FAIL with setup hint
+    Given a baseline-healthy obsidian-memory install
+    And   the config has no "vaultPath" key
+    When  I run "/obsidian-memory:doctor"
+    Then  the doctor output contains "FAIL"
+    And   the doctor output contains "vaultPath"
+    And   the doctor output contains "/obsidian-memory:setup"
+    And   the doctor exit code is non-zero
+
+  Scenario: F3 — vaultPath points at a non-existent directory reports FAIL with setup hint
+    Given the config has "vaultPath" pointing at a non-existent directory
+    When  I run "/obsidian-memory:doctor"
+    Then  the doctor output contains "FAIL"
+    And   the doctor output contains "does not exist"
+    And   the doctor output contains "/obsidian-memory:setup"
+    And   the doctor exit code is non-zero
+
+  Scenario: F4 — jq missing reports FAIL with brew hint
+    Given a baseline-healthy obsidian-memory install
+    And   "jq" is not on PATH
+    When  I run "/obsidian-memory:doctor"
+    Then  the doctor output contains "FAIL"
+    And   the doctor output contains "jq"
+    And   the doctor output contains "brew install jq"
+    And   the doctor exit code is non-zero
+
+  Scenario: F5 — claude missing reports FAIL with CLI install hint
+    Given a baseline-healthy obsidian-memory install
+    And   "claude" is not on PATH
+    When  I run "/obsidian-memory:doctor"
+    Then  the doctor output contains "FAIL"
+    And   the doctor output contains "claude"
+    And   the doctor output contains "Claude Code CLI"
+    And   the doctor exit code is non-zero
+
+  Scenario: F6 — projects symlink broken reports FAIL with setup hint
+    Given a baseline-healthy obsidian-memory install
+    And   the projects symlink under the vault is broken
+    When  I run "/obsidian-memory:doctor"
+    Then  the doctor output contains "FAIL"
+    And   the doctor output contains "projects"
+    And   the doctor output contains "/obsidian-memory:setup"
+    And   the doctor exit code is non-zero
+
+  Scenario: F7 — sessions directory missing reports FAIL with setup hint
+    Given a baseline-healthy obsidian-memory install
+    And   the sessions directory under the vault is missing
+    When  I run "/obsidian-memory:doctor"
+    Then  the doctor output contains "FAIL"
+    And   the doctor output contains "sessions"
+    And   the doctor output contains "/obsidian-memory:setup"
+    And   the doctor exit code is non-zero
+
+  Scenario: F8 — rag.enabled=false reports FAIL with toggle hint
+    Given a baseline-healthy obsidian-memory install
+    And   "rag.enabled" is set to false in the config
+    When  I run "/obsidian-memory:doctor"
+    Then  the doctor output contains "FAIL"
+    And   the doctor output contains "rag.enabled"
+    And   the doctor output contains "/obsidian-memory:toggle rag on"
+    And   the doctor exit code is non-zero
+
+  Scenario: F9 — distill.enabled=false reports FAIL with toggle hint
+    Given a baseline-healthy obsidian-memory install
+    And   "distill.enabled" is set to false in the config
+    When  I run "/obsidian-memory:doctor"
+    Then  the doctor output contains "FAIL"
+    And   the doctor output contains "distill.enabled"
+    And   the doctor output contains "/obsidian-memory:toggle distill on"
+    And   the doctor exit code is non-zero
+
+  # --- Read-Only Invariant ---
+
+  Scenario: Doctor is read-only across any state
+    Given a baseline-healthy obsidian-memory install
+    And   a snapshot of the scratch vault and obsidian-memory config is taken
+    When  I run "/obsidian-memory:doctor" in the healthy state
+    And   I run "/obsidian-memory:doctor --json" in the healthy state
+    Then  the scratch vault snapshot is unchanged
+
+  # --- Optional Dependencies ---
+
+  Scenario: Missing ripgrep is informational, not failing
+    Given a baseline-healthy obsidian-memory install
+    And   "rg" is not on PATH
+    When  I run "/obsidian-memory:doctor"
+    Then  the doctor output contains "INFO"
+    And   the doctor output contains "ripgrep"
+    And   the doctor exit code is 0
+
+  # --- JSON Output ---
+
+  Scenario: --json emits a machine-readable report on a healthy install
+    Given a baseline-healthy obsidian-memory install
+    When  I run "/obsidian-memory:doctor --json"
+    Then  the doctor output is a single valid JSON object
+    And   the JSON object has top-level "ok" equal to true
+    And   the JSON object has check "config" with status "ok"
+    And   the JSON object has check "vault_path" with status "ok"
+    And   the doctor exit code is 0
+
+  Scenario: --json emits a machine-readable report on a broken install
+    Given the config has "vaultPath" pointing at a non-existent directory
+    When  I run "/obsidian-memory:doctor --json"
+    Then  the doctor output is a single valid JSON object
+    And   the JSON object has top-level "ok" equal to false
+    And   the JSON object has check "vault_path" with status "fail"
+    And   the JSON object has check "vault_path" with hint containing "/obsidian-memory:setup"
+    And   the doctor exit code is non-zero
