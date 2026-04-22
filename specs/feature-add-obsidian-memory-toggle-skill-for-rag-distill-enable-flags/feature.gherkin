@@ -1,0 +1,121 @@
+# File: specs/feature-add-obsidian-memory-toggle-skill-for-rag-distill-enable-flags/feature.gherkin
+#
+# Generated from: specs/feature-add-obsidian-memory-toggle-skill-for-rag-distill-enable-flags/requirements.md
+# Issue: #4
+
+Feature: Toggle Skill for rag/distill Enable Flags
+  As a Claude Code + Obsidian user troubleshooting a hook or temporarily stepping out of RAG
+  I want a one-command way to flip rag.enabled / distill.enabled
+  So that I do not have to hand-edit ~/.claude/obsidian-memory/config.json every time
+
+  Background:
+    Given obsidian-memory is installed at "$PLUGIN_ROOT"
+
+  # --- AC1: Explicit enable flips and reports prior -> new ---
+
+  Scenario: Explicit "off" flips rag.enabled from true to false
+    Given a config at "$HOME/.claude/obsidian-memory/config.json" with "rag.enabled" set to true
+    When  the user runs "vault-toggle.sh rag off"
+    Then  the exit code is 0
+    And   stdout contains "rag.enabled: true -> false"
+    And   the config at "$HOME/.claude/obsidian-memory/config.json" has "rag.enabled" set to false
+
+  # --- AC2: Flip without explicit state ---
+
+  Scenario: Toggle without an explicit state flips the current value
+    Given a config at "$HOME/.claude/obsidian-memory/config.json" with "distill.enabled" set to false
+    When  the user runs "vault-toggle.sh distill"
+    Then  the exit code is 0
+    And   stdout contains "distill.enabled: false -> true"
+    And   the config has "distill.enabled" set to true
+
+  # --- AC3: Status read-out is read-only ---
+
+  Scenario: Status prints both flags and does not mutate the config
+    Given a config with "rag.enabled" true and "distill.enabled" false
+    And   a snapshot of the config file's mtime and inode
+    When  the user runs "vault-toggle.sh status"
+    Then  the exit code is 0
+    And   stdout contains "rag.enabled: true"
+    And   stdout contains "distill.enabled: false"
+    And   the config file's mtime and inode match the snapshot
+
+  Scenario: No-arg invocation is equivalent to status
+    Given a config with "rag.enabled" true and "distill.enabled" true
+    And   a snapshot of the config file's mtime and inode
+    When  the user runs "vault-toggle.sh"
+    Then  the exit code is 0
+    And   stdout contains "rag.enabled: true"
+    And   stdout contains "distill.enabled: true"
+    And   the config file's mtime and inode match the snapshot
+
+  # --- AC4: Unknown feature errors cleanly ---
+
+  Scenario: Unknown feature name exits non-zero and does not mutate the config
+    Given a config with "rag.enabled" true and "distill.enabled" true
+    And   a snapshot of the config file's mtime and inode
+    When  the user runs "vault-toggle.sh foobar on"
+    Then  the exit code is 2
+    And   stderr contains "ERROR: unknown feature 'foobar'"
+    And   stderr contains "allowed: rag, distill"
+    And   the config file's mtime and inode match the snapshot
+
+  # --- AC5: Missing config is a clean error ---
+
+  Scenario: Missing config file reports a setup hint and exits non-zero
+    Given there is no config file at "$HOME/.claude/obsidian-memory/config.json"
+    When  the user runs "vault-toggle.sh rag on"
+    Then  the exit code is 1
+    And   stderr contains "ERROR: config not found"
+    And   stderr contains "/obsidian-memory:setup"
+    And   no file exists at "$HOME/.claude/obsidian-memory/config.json"
+
+  # --- AC6: Atomic writes ---
+
+  Scenario: Atomic write — original config survives a failed mv
+    Given a config at "$HOME/.claude/obsidian-memory/config.json" with "rag.enabled" set to true
+    And   the config contains an unrelated user key "customFoo" set to 42
+    And   a "mv" stub on PATH that always exits non-zero
+    When  the user runs "vault-toggle.sh rag off"
+    Then  the exit code is 1
+    And   the config at "$HOME/.claude/obsidian-memory/config.json" still has "rag.enabled" set to true
+    And   the config still has "customFoo" set to 42
+    And   no ".tmp" artifact remains in "$HOME/.claude/obsidian-memory/"
+
+  Scenario: Successful mutation preserves every unrelated key byte-for-byte
+    Given a config at "$HOME/.claude/obsidian-memory/config.json" with "rag.enabled" set to true
+    And   the config contains an unrelated user key "customFoo" set to 42
+    When  the user runs "vault-toggle.sh rag off"
+    Then  the exit code is 0
+    And   the config still has "customFoo" set to 42
+    And   the config uses 2-space indentation
+    And   no ".tmp" artifact remains in "$HOME/.claude/obsidian-memory/"
+
+  # --- AC7: "Already that state" is success ---
+
+  Scenario: Already-in-state is an informational success, not a rewrite
+    Given a config with "rag.enabled" set to true
+    And   a snapshot of the config file's mtime and inode
+    When  the user runs "vault-toggle.sh rag on"
+    Then  the exit code is 0
+    And   stdout contains "rag.enabled was already true"
+    And   the config file's mtime and inode match the snapshot
+
+  # --- AC8: State aliases (Scenario Outline) ---
+
+  Scenario Outline: State aliases resolve to the expected boolean
+    Given a config with "rag.enabled" set to <starting>
+    When  the user runs "vault-toggle.sh rag <alias>"
+    Then  the exit code is 0
+    And   the config has "rag.enabled" set to <expected>
+
+    Examples:
+      | starting | alias | expected |
+      | false    | on    | true     |
+      | false    | true  | true     |
+      | false    | 1     | true     |
+      | false    | yes   | true     |
+      | true     | off   | false    |
+      | true     | false | false    |
+      | true     | 0     | false    |
+      | true     | no    | false    |
