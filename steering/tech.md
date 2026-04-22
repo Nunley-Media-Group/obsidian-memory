@@ -46,11 +46,13 @@ No server component. No network calls on the hot path. The only subprocess spawn
 | JSON handling | `jq` | ≥ 1.6 |
 | Distillation subprocess | Claude CLI (`claude`) | latest stable; invoked as `claude -p` with `CLAUDECODE=""` in the env |
 | Optional MCP integration | [obsidian-claude-code-mcp](https://github.com/iansinnott/obsidian-claude-code-mcp) | registered at user scope by `/obsidian-memory:setup` on opt-in |
+| Embedding backend (opt-in) | [ollama](https://ollama.com) + `nomic-embed-text` | any; opt-in for embedding backend. macOS: `brew install ollama && ollama pull nomic-embed-text`. Linux: `curl -fsSL https://ollama.com/install.sh \| sh && ollama pull nomic-embed-text`. Required only when `rag.backend = "embedding"`; the plugin never installs ollama. |
+| HTTP client (opt-in) | `curl` | any; required only when `rag.backend = "embedding"` to reach the ollama HTTP API |
 | Distribution | [nmg-plugins marketplace](https://github.com/Nunley-Media-Group/nmg-plugins) | user-scope install via `claude plugin install obsidian-memory` |
 
 ### External Services
 
-None. obsidian-memory is local-first. The only external binary invoked is the already-authenticated `claude` CLI.
+None. obsidian-memory is local-first. The only external binary invoked is the already-authenticated `claude` CLI. ollama — used only when the user opts into `rag.backend = "embedding"` — remains local (`127.0.0.1:11434` by default); the plugin never contacts a SaaS endpoint.
 
 ---
 
@@ -115,7 +117,7 @@ In `~/.claude/obsidian-memory/config.json`, rename `rag.enabled` → `rag.enable
 | Authentication | None at the plugin level. `claude -p` inherits the user's existing CLI auth. |
 | Authorization | Hooks only read from `<vault>` and `~/.claude/projects/`, and only write to `<vault>/claude-memory/`. Paths are read from config; the plugin never accepts paths from prompt content. |
 | Secrets management | No secrets stored by the plugin. Config contains only a vault path and enable flags. |
-| Input validation | Prompt text is never interpolated into shell commands. The RAG hook passes the prompt to `rg`/`grep` via stdin or `--` separated argv, never via command-string concatenation. |
+| Input validation | Prompt text is never interpolated into shell commands. The RAG hook passes the prompt to `rg`/`grep` via stdin or `--` separated argv, never via command-string concatenation. When sending prompt text to the ollama HTTP API, the canonical form is `curl --data @- < body.json` (or piping a JSON body into `curl --data @-`) — prompt content lives in a JSON body read from stdin, never in an argv string. |
 | Filesystem safety | All writes use absolute paths derived from `config.json`. Slugs for session filenames are `[a-z0-9-]`, collapsed and length-capped, so untrusted project names cannot escape the sessions directory. |
 
 ---

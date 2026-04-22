@@ -1,8 +1,8 @@
 # Requirements: RAG prompt injection hook
 
-**Issues**: #10
-**Date**: 2026-04-19
-**Status**: Approved
+**Issues**: #10, #5
+**Date**: 2026-04-21
+**Status**: Amended
 **Author**: Rich Nunley
 
 ---
@@ -125,6 +125,61 @@ This spec describes current behavior only. It exists so downstream enhancement i
 **And** the hook does not `eval` or string-concatenate prompt text into any shell command
 **And** the hook exits 0 with at most a normal `<vault-context>` block containing literal keyword text
 
+<!-- Added by issue #5 — embedding-based retrieval swap -->
+
+### AC13: Embedding backend returns semantically relevant matches (Happy Path — embedding)
+
+**Given** a vault containing `note-a.md` about "database migrations" and `note-b.md` about "rendering a D&D campaign map"
+**And** `rag.backend` is `"embedding"`
+**And** the ollama daemon is reachable and the `nomic-embed-text` model is present
+**And** a current embeddings index exists under `~/.claude/obsidian-memory/index/`
+**When** the user submits the prompt `"how do I handle schema drift between envs"`
+**Then** the `<vault-context>` block lists `note-a.md` ranked higher than `note-b.md`
+**And** the hook exits 0
+
+### AC14: Graceful fallback to keyword retrieval when backend is unavailable (Alternative Path — embedding)
+
+**Given** `rag.backend` is `"embedding"`
+**And** the ollama daemon is unreachable, OR `curl` is missing, OR the configured model is not pulled, OR the index file is absent/corrupt
+**When** the RAG hook runs against any prompt
+**Then** the hook silently falls through to the keyword path
+**And** produces the same `<vault-context>` output the keyword backend would produce for that prompt
+**And** exits 0
+**And** logs a one-line fallback reason to stderr (never to stdout, never to the session UI)
+
+### AC15: Index staleness is handled without blocking the hot path (Edge Case — embedding)
+
+**Given** `rag.backend` is `"embedding"` and a current index exists
+**And** one or more vault notes have been modified since the last index build
+**When** the RAG hook runs
+**Then** the hook uses the existing index as-is to produce results
+**And** the hook never spawns an indexing process on the `UserPromptSubmit` path
+**And** the hook exits 0
+
+### AC16: Index lives under a known, user-visible path (Structure)
+
+**Given** the user runs `/obsidian-memory:reindex`
+**When** the index build completes
+**Then** a single index artifact exists at `~/.claude/obsidian-memory/index/embeddings.jsonl`
+**And** no index artifact is written anywhere under `$VAULT`
+**And** `/obsidian-memory:doctor` reports the index path and its mtime as an informational line
+
+### AC17: Keyword-path behavior is preserved when semantics don't apply (Regression)
+
+**Given** a vault with exactly one `.md` file whose content contains the verbatim prompt text
+**When** the RAG hook runs with `rag.backend` set to either `"keyword"` or `"embedding"`
+**Then** that file appears in the top result under either backend
+**And** all of AC1–AC12 still pass when `rag.backend` is `"keyword"` (the default)
+
+### AC18: Users can opt out of embeddings entirely (Alternative Path)
+
+**Given** `rag.backend` is `"keyword"` (the default) in `~/.claude/obsidian-memory/config.json`
+**When** the RAG hook runs
+**Then** no HTTP call is made to the ollama endpoint
+**And** no index file is read
+**And** the keyword-retrieval path runs identically to its v0.1 behavior
+**And** the hook exits 0
+
 ### Generated Gherkin Preview
 
 ```gherkin
@@ -159,6 +214,14 @@ Feature: RAG prompt injection hook
 | FR10 | Exit 0 on every terminating path; log unexpected failures to stderr via `trap … ERR` | Must | Safety rule |
 | FR11 | Never interpolate prompt content into a shell command; pass to `rg`/`grep` via `-e` flag with `--` separators | Must | Security rule |
 | FR12 | Use `set -u` but **not** `set -e` at top level; internal helpers may return non-zero | Must | Per `tech.md` |
+| FR13 | Add a `rag.backend` config key. Accepted values: `"keyword"` (default, preserves v0.1 behavior) or `"embedding"` (new). Any other value falls through to keyword with a stderr warning. | Must | #5 — opt-in embedding swap |
+| FR14 | Embedding backend is a local ollama daemon (`http://127.0.0.1:11434`) using `nomic-embed-text` by default. Endpoint URL and model are configurable via `rag.embedding.endpoint` and `rag.embedding.model`. Ollama is opt-in — the user must install and start it; the plugin never installs it. | Must | #5 — one backend picked per issue; local-first preserved |
+| FR15 | Add `/obsidian-memory:reindex` skill that walks the vault (respecting the same exclusions as v0.1 RAG), embeds each note via ollama, and writes a JSONL index at `~/.claude/obsidian-memory/index/embeddings.jsonl`. The skill is synchronous and blocks until the build completes; it is NEVER invoked from the `UserPromptSubmit` path. | Must | #5 — explicit reindex surface |
+| FR16 | On any failure inside the embedding path (ollama unreachable, missing `curl`, missing model, missing/corrupt index, HTTP non-2xx, unparseable response), the hook silently falls through to the existing keyword path. Fallback reason is logged once to stderr. | Must | #5 — AC14 |
+| FR17 | `hooks/hooks.json` MUST NOT change. The swap is entirely inside `scripts/`. | Must | #5 — "one-script swaps" product principle |
+| FR18 | `steering/tech.md` → Technology Stack table gains a row for `ollama` (optional; only required when `rag.backend = "embedding"`) with its install/start commands. | Must | #5 — FR6 of issue |
+| FR19 | `/obsidian-memory:doctor` (issue #2) gains an informational (non-failing) check that reports: `rag.backend` value, ollama reachability at the configured endpoint, the configured model's presence in `ollama list`, and the index file's path + mtime. | Should | #5 — FR7 of issue |
+| FR20 | Add `rag.top_k` config key (positive integer; default 5) controlling how many notes both backends return. Values outside `1..50` clamp to the valid range with a stderr warning. | Should | #5 — FR8 of issue |
 
 ---
 
@@ -210,15 +273,19 @@ Not applicable. The hook has no user-facing UI. Its "output surface" is the `<va
 
 - [ ] `hooks/hooks.json` — declares `UserPromptSubmit → scripts/vault-rag.sh`
 - [ ] `~/.claude/obsidian-memory/config.json` — written by `/obsidian-memory:setup` (feature-vault-setup)
+- [ ] `/obsidian-memory:doctor` (issue #2) — gains an informational embedding-backend health line (FR19)
 
 ### External Dependencies
 
 - [ ] `jq` — hard dependency; hook no-ops if missing
 - [ ] `ripgrep` (`rg`) — optional; POSIX fallback otherwise
+- [ ] `ollama` + `nomic-embed-text` — optional; required only when `rag.backend = "embedding"` (FR14)
+- [ ] `curl` — optional; required only when `rag.backend = "embedding"` to reach the ollama HTTP API
 
 ### Blocked By
 
-- [ ] None — ships today
+- [ ] v0.1 baseline ships today
+- [ ] #5 (embedding swap) depends on #1 (bats-core + cucumber-shell harness) — the harness is the regression gate that proves AC17 (keyword-path preservation)
 
 ---
 
@@ -233,6 +300,15 @@ Not applicable. The hook has no user-facing UI. Its "output surface" is the `<va
 - Configurable keyword cap (future — 6 today)
 - Configurable excerpt size (future — ~600 B today)
 - Configurable top-N (future — 5 today)
+
+**Added by issue #5 — explicitly out of scope for the embedding swap:**
+
+- Rewriting the distillation hook — this issue is retrieval-only.
+- A generic vector-DB abstraction layer — the implementation picks ollama and commits to it; swapping to a different backend is a future issue.
+- Cross-project search (still tracked separately under the "Cross-project search surface" line above).
+- Automatic re-indexing on filesystem events — manual `/obsidian-memory:reindex` plus optional future periodic rebuild is acceptable for this milestone.
+- Bundling an embeddings model binary into the plugin — ollama is a user-installed prerequisite.
+- Installing ollama on the user's behalf — the plugin documents the requirement but never runs an installer.
 
 ---
 
@@ -258,6 +334,7 @@ Not applicable. The hook has no user-facing UI. Its "output surface" is the `<va
 | Issue | Date | Summary |
 |-------|------|---------|
 | #10 | 2026-04-19 | Initial baseline spec — documents v0.1.0 shipped behavior |
+| #5 | 2026-04-21 | Added embedding-backend swap (ollama + nomic-embed-text), `rag.backend` / `rag.top_k` / `rag.embedding.*` config keys, `/obsidian-memory:reindex` skill, silent fallback to keyword on any embedding failure, and AC13–AC18 covering semantic relevance, fallback, staleness, index location, keyword-path preservation, and opt-out |
 
 ---
 

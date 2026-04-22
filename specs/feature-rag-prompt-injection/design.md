@@ -1,8 +1,8 @@
 # Design: RAG prompt injection hook
 
-**Issues**: #10
-**Date**: 2026-04-19
-**Status**: Approved
+**Issues**: #10, #5
+**Date**: 2026-04-21
+**Status**: Amended
 **Author**: Rich Nunley
 
 ---
@@ -237,11 +237,273 @@ Every test must run against a scratch `$HOME` and scratch vault under `$BATS_TES
 
 ---
 
+<!-- Added by issue #5 — embedding-based retrieval swap -->
+
+## Embedding Backend (Issue #5)
+
+### Overview
+
+Issue #5 layers an **embedding-based retrieval path** onto the existing keyword design without changing `hooks/hooks.json`. The product principle being exercised is **"one-script swaps"** (`steering/product.md` → Product Principles) — retrieval backends are swappable at the script layer, not the hook-wiring layer. The swap is opt-in via a new `rag.backend` config key; `"keyword"` remains the default so v0.1 users see no behavior change.
+
+The approach refactors `scripts/vault-rag.sh` into a **thin dispatcher** that reads `rag.backend` from config and delegates to one of two backend scripts. The existing keyword logic is extracted verbatim into `scripts/vault-rag-keyword.sh`; the new embedding logic lives in `scripts/vault-rag-embedding.sh`. Any failure in the embedding path silently falls through to the keyword path, preserving the "never blocks the user" invariant.
+
+### Backend Choice: ollama + nomic-embed-text
+
+Of the three backends the issue allowed (bundled local model, ollama-backed, SaaS API), **ollama** is selected:
+
+- **Bundled local model** requires an ONNX runtime or similar, a model file shipped in the plugin, and platform-specific binaries — incompatible with the "plain Bash + jq" distribution shape.
+- **SaaS API** (OpenAI etc.) violates the local-first Product Principle. It would require network auth management and leak prompt-derived queries.
+- **ollama** runs locally, exposes a stable HTTP API (`POST /api/embeddings`), is well-established on both macOS and Linux, requires no code bundled into the plugin, and is opt-in by construction — if the user hasn't installed and started it, the plugin falls through to keyword retrieval with no harm.
+
+Default model: **`nomic-embed-text`** (768 dims, small, fast to embed, popular default). Both endpoint (`rag.embedding.endpoint`, default `http://127.0.0.1:11434`) and model (`rag.embedding.model`) are configurable so users with existing ollama installs can pick their own.
+
+### Component Diagram (embedding path)
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Claude Code session: user hits Enter on a prompt               │
+└─────────────────────────┬───────────────────────────────────────┘
+                          │ UserPromptSubmit event
+                          ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  hooks/hooks.json  (UNCHANGED — the "one-script swap" guarantee)│
+│   UserPromptSubmit[0].hooks[0].command =                        │
+│     ${CLAUDE_PLUGIN_ROOT}/scripts/vault-rag.sh                  │
+└─────────────────────────┬───────────────────────────────────────┘
+                          │ stdin: { "prompt": "…" }
+                          ▼
+┌─────────────────────────────────────────────────────────────────┐
+│  scripts/vault-rag.sh  (NEW role: thin dispatcher)              │
+│   1. guards identical to v0.1 (jq, config, rag.enabled)         │
+│   2. read rag.backend (default "keyword")                       │
+│   3. switch:                                                    │
+│       "keyword"   → exec vault-rag-keyword.sh                   │
+│       "embedding" → try vault-rag-embedding.sh                  │
+│                     │                                           │
+│                     └── on any error → exec keyword + log       │
+│       other        → log warning → exec keyword                 │
+└─────────────┬─────────────────────────────────────┬─────────────┘
+              │                                     │
+              ▼                                     ▼
+┌─────────────────────────┐              ┌──────────────────────────┐
+│ vault-rag-keyword.sh    │              │ vault-rag-embedding.sh   │
+│ (v0.1 logic extracted   │              │ 1. validate: curl,       │
+│  unchanged)             │              │    ollama reachable,     │
+│                         │              │    model present,        │
+│                         │              │    index file present    │
+│                         │              │ 2. POST /api/embeddings  │
+│                         │              │    with prompt → query   │
+│                         │              │    vector               │
+│                         │              │ 3. stream index JSONL;   │
+│                         │              │    cosine-score each row │
+│                         │              │    via awk helper        │
+│                         │              │ 4. sort -rn; head -n K   │
+│                         │              │ 5. emit <vault-context>  │
+│                         │              │    with excerpt via      │
+│                         │              │    shared formatter      │
+│                         │              │ On ANY failure →         │
+│                         │              │    exec keyword path     │
+└─────────────────────────┘              └──────────────────────────┘
+```
+
+### Data Flow (embedding path)
+
+```
+Prompt text (stdin JSON .prompt)
+   │
+   ▼
+curl -sS --max-time 5 -X POST http://127.0.0.1:11434/api/embeddings \
+     -H 'content-type: application/json' \
+     -d '{"model":"nomic-embed-text","prompt":"<prompt>"}'
+   │   (prompt sent in the JSON body only — never in an argv string)
+   ▼
+jq -r '.embedding[]' → QUERY_VEC (newline-separated floats, 768 values)
+   │
+   ▼
+Stream ~/.claude/obsidian-memory/index/embeddings.jsonl:
+  for each line {"path","embedding":[...],"mtime"}:
+      awk computes dot(QUERY_VEC, embedding) / (||QUERY_VEC|| * ||embedding||)
+      emits "<score>\t<abs-path>"
+   │
+   ▼
+sort -rn -k1,1 | head -n $TOP_K → TOP  (default 5; configurable via rag.top_k)
+   │
+   ▼
+Shared excerpt formatter (same Markdown frame as keyword path):
+  printf '<vault-context source="obsidian" backend="embedding" model="nomic-embed-text">\n'
+  per (score, path): emit "### <rel>  (score: <s>)" + fenced excerpt (first ~600 B of the note)
+  printf '</vault-context>\n'
+```
+
+### Index Format and Location
+
+The index is a **single JSONL file** at `~/.claude/obsidian-memory/index/embeddings.jsonl`. Plain text keeps the local-first, inspectable principle intact — the user can `cat`, `grep`, or `wc -l` the index from a shell; no SQLite, no custom binary format.
+
+One line per indexed note:
+
+```json
+{"path":"<abs-path>","rel":"<path-relative-to-vault>","embedding":[f1,f2,…,f768],"mtime":<unix-ts>,"model":"nomic-embed-text","dim":768}
+```
+
+Exclusions at index time match the v0.1 keyword path exactly: `claude-memory/projects/**`, `.obsidian/**`, `.trash/**`, and the same `*.md` glob. This guarantees AC5/AC6 feedback-loop protection carries across both backends.
+
+A companion file `~/.claude/obsidian-memory/index/embeddings.meta.json` stores build metadata:
+
+```json
+{"built_at": 1745270400, "vault_path": "...", "note_count": 1234, "model": "nomic-embed-text", "dim": 768}
+```
+
+`/obsidian-memory:doctor` reads this file to surface index freshness.
+
+### Async Rebuild Decision
+
+Per AC15, the hook **never rebuilds the index synchronously**. The chosen implementation uses the existing index **as-is** on every invocation — no auto-refresh, no background spawn, no mtime comparison on the hot path. This is the minimal, latency-safe choice: indexing is exclusively driven by the user running `/obsidian-memory:reindex`. A future enhancement may add `rag.auto_reindex = "detached"` to fork a detached rebuild when staleness is detected; that is explicitly Out of Scope here.
+
+### /obsidian-memory:reindex Skill
+
+A new user-invocable skill at `skills/reindex/SKILL.md` orchestrates index construction. It is **not** a hook — it runs only on demand.
+
+Behavior:
+
+1. Read `~/.claude/obsidian-memory/config.json`; abort with a user-visible error if embedding backend is not configured or ollama is unreachable. Reindex is the one place a visible error is acceptable because the user invoked it deliberately.
+2. Enumerate notes under `$VAULT` with the same exclusion rules as the RAG hook.
+3. For each note: read contents, truncate to a model-appropriate size (first ~8 KB), POST to `/api/embeddings`, collect the vector.
+4. Write `embeddings.jsonl` atomically: build a temp file under `~/.claude/obsidian-memory/index/`, `mv` into place.
+5. Write `embeddings.meta.json` with the new timestamp.
+6. Print progress to stdout (N/M notes); print a final summary line.
+
+Idempotent: re-running the skill rebuilds the index from scratch — simpler than incremental updates, and for ~1k-note vaults the wall time is dominated by ollama, not file I/O.
+
+### Dispatcher Contract (`vault-rag.sh` after amendment)
+
+The dispatcher preserves every guard and exit-0 invariant from v0.1. Pseudocode:
+
+```bash
+# … existing v0.1 guards: jq, config, rag.enabled, vault dir …
+
+backend="$(jq -r '.rag.backend // "keyword"' "$CONFIG" 2>/dev/null)"
+case "$backend" in
+  keyword)   exec "$PLUGIN_ROOT/scripts/vault-rag-keyword.sh"   ;;  # stdin inherited
+  embedding)
+    # try embedding; on any failure, exec keyword
+    if "$PLUGIN_ROOT/scripts/vault-rag-embedding.sh" < "$PAYLOAD_TMP"; then
+      exit 0
+    fi
+    log_err "embedding backend failed; falling back to keyword"
+    exec "$PLUGIN_ROOT/scripts/vault-rag-keyword.sh" < "$PAYLOAD_TMP"
+    ;;
+  *)
+    log_err "unknown rag.backend=$backend; using keyword"
+    exec "$PLUGIN_ROOT/scripts/vault-rag-keyword.sh" < "$PAYLOAD_TMP"
+    ;;
+esac
+```
+
+Stdin has to be replayed because both backends need the original JSON payload. The dispatcher tees the payload to a per-invocation `mktemp` file and cleans it via the EXIT trap — identical scratch-file pattern to the existing implementation.
+
+### Cosine Similarity in awk
+
+The ranking kernel is a small awk program fed with the query vector as an env var and the index JSONL on stdin. Skeleton:
+
+```awk
+# QVEC env var is space-separated floats
+BEGIN { n = split(ENVIRON["QVEC"], q, " "); for (i=1;i<=n;i++) qnorm += q[i]*q[i]; qnorm = sqrt(qnorm) }
+{
+  # input line: <rel>\t<f1> <f2> … <fN>
+  split($2, v, " ")
+  dot = 0; norm = 0
+  for (i=1;i<=n;i++) { dot += q[i]*v[i]; norm += v[i]*v[i] }
+  score = (qnorm > 0 && norm > 0) ? dot / (qnorm * sqrt(norm)) : 0
+  printf "%.6f\t%s\n", score, $1
+}
+```
+
+The embedding-path script preprocesses each JSONL line into `<rel>\t<space-separated-floats>` via `jq -r` before feeding awk. All heavy numeric work is in awk, which is on every target platform (macOS default + Linux), so no extra runtime dependency.
+
+Performance ceiling: for a 1k-note × 768-dim vault, this is ~768 × 1000 = ~768k multiplies — well under 100 ms in awk. The dominant cost is the single ollama round-trip for the query (~30–80 ms on a warm daemon). The hot-path p95 target of <300 ms from `tech.md` stays comfortably in range for vaults up to ~5k notes before revisiting. Beyond that, a sqlite-vec or hnswlib swap is a future issue.
+
+### Fallback Protocol (Silent Failure)
+
+Every failure mode in the embedding path is mapped to one behavior: **exec the keyword backend**. The complete list:
+
+| Failure mode | Detection | Action |
+|---|---|---|
+| `curl` not on PATH | `command -v curl` | exec keyword; stderr: `"curl missing"` |
+| ollama unreachable | `curl` non-2xx or timeout | exec keyword; stderr: `"ollama unreachable"` |
+| Model not pulled | HTTP response body has no `.embedding` | exec keyword; stderr: `"model missing"` |
+| Index file missing | `test -f embeddings.jsonl` fails | exec keyword; stderr: `"index missing — run /obsidian-memory:reindex"` |
+| Index file empty / corrupt | Zero rows or `jq` parse failure | exec keyword; stderr: `"index corrupt"` |
+| awk ranking produced no results | `wc -l` on ranked output = 0 | exec keyword (same as "no matches") |
+
+The stderr line fires **once** per invocation and goes to Claude Code's hook operator log, never to the session UI (per `tech.md` Security / silent-failure rules).
+
+### `hooks/hooks.json` — Explicitly Unchanged
+
+This is the **load-bearing invariant** of the issue. The existing declaration:
+
+```json
+{"type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/scripts/vault-rag.sh"}
+```
+
+is the single source of truth for what Claude Code fires on `UserPromptSubmit`. The embedding swap replaces the *contents* of `vault-rag.sh` with a dispatcher and adds sibling scripts. `hooks.json` stays byte-identical. This guarantees no user action is required to adopt (or ignore) embedding retrieval — the v0.1 config path through the dispatcher produces v0.1 output exactly.
+
+### Alternatives Considered (Issue #5)
+
+| Option | Description | Pros | Cons | Decision |
+|--------|-------------|------|------|----------|
+| **F: sqlite-vec extension** | Store embeddings in `~/.claude/obsidian-memory/index.db` with the `sqlite-vec` extension | Proper ANN; scales to 100k+ notes; ACID persistence | Requires the extension to be available; violates "plain text > databases" principle; more complex ops (migrations, corruption recovery) | Rejected — plain JSONL is sufficient for target vault sizes |
+| **G: hnswlib via a Python helper** | Ship a Python dependency and use hnswlib for fast ANN | Best-in-class ranking performance | Adds a Python dep the plugin otherwise doesn't need; platform-specific wheel issues; violates "Bash + jq" distribution | Rejected |
+| **H: OpenAI embeddings SaaS** | Call `POST https://api.openai.com/v1/embeddings` | High-quality embeddings; no local install | Violates local-first; requires API key management; per-prompt network latency | Rejected — fails the Product Principle |
+| **I: Bundled ONNX model + runtime** | Ship a small `all-MiniLM-L6-v2` ONNX file and call `onnxruntime` | Fully self-contained; no user install step | Platform-specific binaries; plugin size balloons; "one-script swap" breaks down into "install a runtime first" | Rejected |
+| **J: ollama + nomic-embed-text + JSONL index** | Current design | Local-first; opt-in; inspectable; zero plugin-bundled binaries; awk-only ranking | Opt-in friction — user must `ollama pull nomic-embed-text`; 100s of ms for huge vaults (still under p95 target for 1k-note target) | **Selected** |
+| **K: Auto-refresh index on staleness** | Detect stale index on hot path, fork detached rebuild | No manual reindex needed | Complicates hot path; a half-built index during a rebuild races with concurrent reads | Rejected for this issue — revisit after AC17 regression is locked in |
+
+### Security Considerations (Issue #5)
+
+- **Prompt never enters an argv**. The prompt is sent to ollama as the `prompt` field of a JSON body via `curl --data @-`, read from stdin; it is never concatenated into a shell string. This preserves the FR11 / AC12 safety model.
+- **ollama is local-only by default** (`127.0.0.1:11434`). The configured endpoint is validated at embedding time — any non-loopback endpoint is permitted (for users running ollama on a LAN server) but a one-time stderr warning is emitted so operators notice. No credentials are ever sent.
+- **Index contents are derived from the user's own vault** — the `<vault-context>` block under the embedding path reveals the same classes of content the keyword path already does. No new data egress.
+- **Model response is parsed with `jq -r '.embedding[]'`** — a malformed response falls through `jq`'s exit code into the fallback branch; no unsafe parsing of model output.
+
+### Performance Considerations (Issue #5)
+
+- **Hot-path cost is dominated by one ollama round-trip** (~30–80 ms on a warm daemon; cold-start the model is ~300–500 ms, which is acceptable under the "first prompt after reboot" case and uncommon during normal use).
+- **Awk cosine kernel is cheap**: 1k notes × 768 dims × ~3 FLOPs per dim ≈ 2.3M ops, well under 50 ms.
+- **Index size**: ~25 KB per note at 768 dims (ASCII floats), so a 1k-note vault is ~25 MB on disk. Acceptable — the user's vault is usually orders of magnitude larger.
+- **No network calls** unless `rag.backend = "embedding"` AND ollama is the configured endpoint AND the hook is actually firing. In the default (`keyword`) state, the embedding path is never touched.
+- **Fallback cost is a `curl` timeout**. The `--max-time 5` ceiling caps the worst case at ~5 s when ollama is wedged or unreachable — above the p95 target but survivable as a one-time event; subsequent invocations can either be reconfigured to `keyword` or the user starts ollama.
+
+### Testing Strategy (Issue #5)
+
+| Layer | Type | Coverage |
+|-------|------|----------|
+| Shellcheck | Static | `scripts/vault-rag-keyword.sh`, `scripts/vault-rag-embedding.sh`, `scripts/vault-reindex.sh` — exit 0 |
+| Unit (awk kernel) | bats | Feed known query + known index rows, assert cosine ordering |
+| Integration — stub ollama | bats | Seed a scratch HTTP server (netcat-based) returning a canned `/api/embeddings` response; assert semantic ranking |
+| Integration — fallback | bats | Point `rag.embedding.endpoint` at a closed port; assert keyword-path output is produced and stderr logs the fallback reason |
+| Integration — reindex | bats | Run `/obsidian-memory:reindex` against a scratch vault with stub ollama; assert `embeddings.jsonl` + `embeddings.meta.json` exist with expected row count |
+| BDD | cucumber-shell | AC13–AC18 as scenarios; Background seeds stub-ollama |
+| Regression | BDD | All 12 existing scenarios run unchanged against the dispatcher when `rag.backend = "keyword"` (AC17) |
+
+Real ollama is NOT required in CI. The stub-ollama helper is a ~30-line Bash function that `nc -l`-s a port and returns a canned JSON response derived from the request prompt's word count (so the test can deterministically assert ranking). An opt-in `TESTS_REQUIRE_REAL_OLLAMA=1` env var runs a smoke test against the real daemon for local verification.
+
+### Risks & Mitigations (Issue #5)
+
+| Risk | Likelihood | Impact | Mitigation |
+|------|------------|--------|------------|
+| User enables embedding but never runs reindex → every prompt falls back silently with no guidance | High | Medium | `/obsidian-memory:doctor` surfaces "index missing" as an informational line; the stderr log message names the reindex skill |
+| ollama model upgrade changes embedding dimensions → old index no longer compatible | Medium | Low | `embeddings.meta.json` stores `dim` and `model`; embedding script validates these match at query time and falls back if not |
+| Concurrent prompts during a `/obsidian-memory:reindex` run race with partial writes | Low | Low | Reindex writes to a temp file and `mv`s atomically; concurrent reads see either the old or new index, never a half-written one |
+| Ollama daemon reachable on loopback but hijacked by a different model → wrong embeddings | Very Low | Low | Dimension check catches this; optional future work could add a `sha256` of the model name/version to meta |
+| Vault contains binary-ish or huge notes that confuse the model | Low | Low | Reindex truncates to first ~8 KB per note; fencing in the hot path is handled by the shared excerpt formatter |
+| Embedding path latency exceeds 300 ms on a cold ollama | Medium | Low | Cold-start is a one-time event; fallback still fires if `curl --max-time 5` is breached; document "ollama warmup" in the reindex skill |
+
 ## Change History
 
 | Issue | Date | Summary |
 |-------|------|---------|
 | #10 | 2026-04-19 | Initial baseline design — documents v0.1.0 shipped behavior |
+| #5 | 2026-04-21 | Added embedding-backend design: ollama + nomic-embed-text dispatcher swap, JSONL index at `~/.claude/obsidian-memory/index/`, awk-based cosine ranking, silent fallback protocol, reindex skill, and the load-bearing invariant that `hooks/hooks.json` is unchanged |
 
 ---
 

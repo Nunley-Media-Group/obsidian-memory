@@ -1,84 +1,46 @@
 #!/usr/bin/env bash
-# vault-rag.sh — UserPromptSubmit hook.
-# Keyword-searches the user's Obsidian vault and emits a <vault-context> block
-# on stdout, which Claude Code prepends to the model's context.
+# vault-rag.sh — UserPromptSubmit hook (dispatcher).
 #
-# Runs on every user prompt, so the scoring pass is a single rg/grep invocation
-# rather than one subprocess per file.
+# Preserves v0.1 guards (jq, config, rag.enabled, vault dir), reads the
+# rag.backend config key, and delegates to the matching backend script:
+#
+#   "keyword"   → scripts/vault-rag-keyword.sh   (v0.1 behavior, the default)
+#   "embedding" → scripts/vault-rag-embedding.sh (opt-in, falls back on failure)
+#   <other>     → keyword, with a stderr warning
+#
+# hooks/hooks.json is unchanged — this is the load-bearing "one-script swap"
+# invariant (FR17). Stdin is teed to a mktemp scratch file so the fallback
+# branch can replay the payload into the keyword backend.
 
 # shellcheck source=scripts/_common.sh
 . "$(dirname "$0")/_common.sh"
 om_load_config rag
 
 PAYLOAD="$(om_read_payload)" || exit 0
-PROMPT="$(printf '%s' "$PAYLOAD" | jq -r '.prompt // empty' 2>/dev/null)"
-[ -n "$PROMPT" ] || exit 0
 
-STOPWORDS="the|and|for|with|that|this|from|have|your|what|when|where|which|will|would|could|should|there|their|them|than|then|into|over|been|being|does|doing|about|just|like|some|only|also|make|made|used|using|file|code|test|user|tool|want|need|help|here|http|https|bash|echo|true|false|null|none|please|cannot|issue|task|line|lines"
+PAYLOAD_TMP="$(mktemp "${TMPDIR:-/tmp}/vault-rag-payload.XXXXXX")"
+trap 'rm -f "$PAYLOAD_TMP" 2>/dev/null; exit 0' EXIT
+printf '%s' "$PAYLOAD" > "$PAYLOAD_TMP"
 
-# Tokenize: lowercase, split on non-alphanumerics, drop stopwords, dedupe,
-# keep words >=4 chars, cap at 6 keywords.
-KEYWORDS="$(
-  printf '%s' "$PROMPT" \
-    | tr '[:upper:]' '[:lower:]' \
-    | tr -c 'a-z0-9' '\n' \
-    | awk -v sw="$STOPWORDS" 'BEGIN{n=split(sw,a,"|"); for(i=1;i<=n;i++) s[a[i]]=1}
-        length($0) >= 4 && !s[$0] && !seen[$0]++ { print; count++; if (count==6) exit }'
-)"
-[ -n "$KEYWORDS" ] || exit 0
+log_err() { printf '[%s] %s\n' "$(basename "$0")" "$*" >&2; }
 
-REGEX="($(printf '%s' "$KEYWORDS" | paste -sd '|' -))"
-KW_ATTR="$(printf '%s' "$KEYWORDS" | paste -sd ',' -)"
+BACKEND="$(jq -r '.rag.backend // "keyword"' "$CONFIG" 2>/dev/null)"
+SCRIPT_DIR="$(dirname "$0")"
 
-TMP_HITS="$(mktemp "${TMPDIR:-/tmp}/vault-rag.XXXXXX")"
-trap 'rm -f "$TMP_HITS" 2>/dev/null; exit 0' EXIT
+case "$BACKEND" in
+  keyword)
+    "$SCRIPT_DIR/vault-rag-keyword.sh" < "$PAYLOAD_TMP"
+    ;;
+  embedding)
+    if ! "$SCRIPT_DIR/vault-rag-embedding.sh" < "$PAYLOAD_TMP"; then
+      log_err "embedding backend failed; falling back to keyword"
+      "$SCRIPT_DIR/vault-rag-keyword.sh" < "$PAYLOAD_TMP"
+    fi
+    ;;
+  *)
+    log_err "unknown rag.backend=$BACKEND; using keyword"
+    "$SCRIPT_DIR/vault-rag-keyword.sh" < "$PAYLOAD_TMP"
+    ;;
+esac
 
-if command -v rg >/dev/null 2>&1; then
-  HAVE_RG=1
-else
-  HAVE_RG=0
-fi
-
-# Single-pass scoring: one process walks the whole vault. rg/grep emit
-# "path:count"; awk flips that to "count<TAB>path" for downstream sort/head.
-# Splitting on the LAST ':' guards against paths that contain ':'.
-if [ "$HAVE_RG" = 1 ]; then
-  rg -c -i --no-messages \
-      --glob '*.md' \
-      --glob '!.obsidian/**' \
-      --glob '!.trash/**' \
-      -e "$REGEX" "$VAULT" 2>/dev/null \
-    | awk 'BEGIN{OFS="\t"} { i=length($0); while (i>0 && substr($0,i,1)!=":") i--;
-        if (i==0) next; n=substr($0,i+1); p=substr($0,1,i-1); if (n+0>0) print n, p }' \
-    | sort -rn -k1,1 \
-    > "$TMP_HITS"
-else
-  find "$VAULT" \
-      \( -path "$VAULT/.obsidian" -o -path "$VAULT/.trash" \) -prune \
-      -o -type f -name '*.md' -print0 2>/dev/null \
-    | xargs -0 grep -c -i -H -E -e "$REGEX" 2>/dev/null \
-    | awk 'BEGIN{OFS="\t"} { i=length($0); while (i>0 && substr($0,i,1)!=":") i--;
-        if (i==0) next; n=substr($0,i+1); p=substr($0,1,i-1); if (n+0>0) print n, p }' \
-    | sort -rn -k1,1 \
-    > "$TMP_HITS"
-fi
-
-[ -s "$TMP_HITS" ] || exit 0
-
-TOP="$(head -n 5 "$TMP_HITS")"
-[ -n "$TOP" ] || exit 0
-
-printf '<vault-context source="obsidian" keywords="%s">\n' "$KW_ATTR"
-
-printf '%s\n' "$TOP" | while IFS=$'\t' read -r hits path; do
-  rel="${path#"$VAULT"/}"
-  printf '\n### %s  (hits: %s)\n' "$rel" "$hits"
-  excerpt="$(grep -n -i -E -B 2 -A 8 -m 1 "$REGEX" "$path" 2>/dev/null | head -c 600)"
-  if [ -n "$excerpt" ]; then
-    # shellcheck disable=SC2016
-    printf '```\n%s\n```\n' "$excerpt"
-  fi
-done
-
-printf '</vault-context>\n'
 exit 0
