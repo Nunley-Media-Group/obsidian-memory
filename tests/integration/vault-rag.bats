@@ -26,7 +26,6 @@ setup() {
 teardown() { assert_home_untouched; }
 
 _write_config() {
-  # $1 = optional jq filter applied to a permissive v0.1 baseline config.
   local filter="${1:-.}"
   cat > "$CONFIG" <<EOF
 {
@@ -43,14 +42,12 @@ EOF
 }
 
 _run_rag() {
-  # $1 = prompt string
   local payload
   payload="$(jq -n --arg p "$1" '{prompt:$p}')"
   printf '%s' "$payload" | "$RAG"
 }
 
 _seed_note() {
-  # $1 = relative path under $VAULT, $2 = body
   local rel="$1" body="$2"
   mkdir -p "$(dirname "$VAULT/$rel")"
   printf '%s\n' "$body" > "$VAULT/$rel"
@@ -90,7 +87,6 @@ _seed_note() {
   _seed_note "my-note.md" "ripgrep not needed when grep is present"
 
   hide_binary rg
-  [ -z "$(command -v rg)" ]
 
   run _run_rag "ripgrep fallback"
 
@@ -148,7 +144,6 @@ _seed_note() {
   _seed_note "my-note.md" "jq is used for config parsing"
 
   hide_binary jq
-  [ -z "$(command -v jq)" ]
 
   # No jq means we cannot build the JSON payload with jq -n; hand-craft it.
   run bash -c 'printf "%s" "{\"prompt\":\"jq config parsing\"}" | "$0"' "$RAG"

@@ -44,22 +44,22 @@ EOF
 teardown() { assert_home_untouched; }
 
 _seed_1000_notes() {
-  # Deterministic fixture: 1000 notes each ~1 KB with a rotating
-  # 20-word vocabulary so ~1/20 of the notes match any given prompt
+  # Rotating 20-word vocabulary so ~1/20 of the notes match any given prompt
   # keyword — realistic recall pressure for the scorer.
   local words=(alpha bravo charlie delta eecho foxtrot golfo hotel india juliet \
                kilotango limat mikes november oscar papayas quebec romeos sierra tangos)
-  local i wi line
+  local i wi line padded
   for i in {1..1000}; do
     wi=$(( i % 20 ))
     line="${words[$wi]} is the topic of note number $i here"
+    printf -v padded '%04d' "$i"
     {
       printf '%s\n' "$line"
       printf '%s\n' "$line"
       printf '%s\n' "$line"
       printf '%s padding line for slightly larger notes\n' "${words[$(( (wi + 3) % 20 ))]}"
       printf '%s padding line for slightly larger notes\n' "${words[$(( (wi + 7) % 20 ))]}"
-    } > "$VAULT/note-$(printf '%04d' "$i").md"
+    } > "$VAULT/note-${padded}.md"
   done
 }
 
@@ -124,7 +124,6 @@ PY
 
   local sorted p95 p95_idx
   sorted="$(printf '%s\n' "${times[@]}" | sort -n)"
-  # Ceiling of N * 0.95 — 19th of 20 samples, 10th of 10, etc.
   p95_idx=$(( (${#times[@]} * 95 + 99) / 100 ))
   p95="$(printf '%s\n' "$sorted" | sed -n "${p95_idx}p")"
 
