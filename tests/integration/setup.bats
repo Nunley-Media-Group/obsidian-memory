@@ -66,9 +66,9 @@ _artefact_digest() {
   _run_setup_skill "$VAULT"
 
   _assert_baseline_artefacts_present
-  [ "$(jq -r '.vaultPath' "$CONFIG")" = "$VAULT" ]
-  [ "$(jq -r '.rag.enabled' "$CONFIG")" = "true" ]
-  [ "$(jq -r '.distill.enabled' "$CONFIG")" = "true" ]
+  [ "$(_config_get_field vaultPath)" = "$VAULT" ]
+  [ "$(_config_get_field rag.enabled)" = "true" ]
+  [ "$(_config_get_field distill.enabled)" = "true" ]
 }
 
 # --- AC2 + success metric: re-running 5x produces zero drift ---------------
@@ -101,8 +101,8 @@ _artefact_digest() {
 
   _run_setup_skill "$VAULT"
 
-  [ "$(jq -r '.vaultPath' "$CONFIG")" = "$VAULT" ]
-  [ "$(jq -r '.notes.enabled' "$CONFIG")" = "true" ]
+  [ "$(_config_get_field vaultPath)" = "$VAULT" ]
+  [ "$(_config_get_field notes.enabled)" = "true" ]
 }
 
 # --- AC3: missing vault path aborts cleanly --------------------------------
