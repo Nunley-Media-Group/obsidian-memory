@@ -4,6 +4,12 @@ All notable changes to plugins in this marketplace are documented here. Format f
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-04-21
+
+### Added
+
+- `/obsidian-memory:toggle` skill — one-command toggle for `rag.enabled` and `distill.enabled` flags in `~/.claude/obsidian-memory/config.json`. Supports `toggle <feature> on|off`, `toggle <feature>` (flip), and `toggle status` (read-only). Writes are atomic via temp-file + `mv`. Closes #4.
+
 ## [0.2.0] - 2026-04-21
 
 ### Added

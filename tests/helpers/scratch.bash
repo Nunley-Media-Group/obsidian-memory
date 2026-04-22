@@ -62,6 +62,11 @@ export VAULT
 PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 export PLUGIN_ROOT
 
+_stat_fingerprint() {
+  if stat -f '%i-%m' "$1" 2>/dev/null; then return 0; fi
+  stat -c '%i-%Y' "$1"
+}
+
 assert_home_untouched() {
   local current
   current="$(_home_digest "$REAL_HOME")"
