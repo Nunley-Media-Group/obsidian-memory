@@ -15,7 +15,7 @@
 | Backend | 3 | [x] |
 | Frontend | 0 | N/A |
 | Integration | 1 | [x] |
-| Testing | 3 | [ ] (deferred to #1 bats-core harness) |
+| Testing | 3 | [x] |
 | Phase 6: Embedding Retrieval Swap (Issue #5) | 11 | [ ] |
 | **Total** | **19** | |
 
@@ -105,8 +105,6 @@ Retroactive task breakdown for the v0.1 baseline. Phase 6 (added by issue #5) sw
 
 ## Phase 5: BDD Testing (Required)
 
-> Deferred until #1 lands the bats-core harness.
-
 ### T007: BDD feature file
 
 **File(s)**: `specs/feature-rag-prompt-injection/feature.gherkin`
@@ -120,15 +118,15 @@ Retroactive task breakdown for the v0.1 baseline. Phase 6 (added by issue #5) sw
 
 ### T008: Step definitions + integration tests
 
-**File(s)**: `tests/features/steps/vault-rag.sh`, `tests/integration/vault-rag.bats`
+**File(s)**: `tests/features/steps/rag.sh`, `tests/integration/vault-rag.bats`
 **Type**: Create
 **Depends**: T007, issue #1
 **Acceptance**:
-- [ ] Step definitions cover every Given/When/Then phrase used in the 12 scenarios
-- [ ] All filesystem state under `$BATS_TEST_TMPDIR`
-- [ ] Stubs `rg` path (unset `PATH`) to force the fallback in AC3
-- [ ] Seeds a 1,000-note fixture vault for performance assertions
-- [ ] Passes `bats tests/integration` and `tests/run-bdd.sh`
+- [x] Step definitions cover every Given/When/Then phrase used in the 12 scenarios
+- [x] All filesystem state under `$BATS_TEST_TMPDIR`
+- [x] Stubs `rg` path (unset `PATH`) to force the fallback in AC3
+- [x] Seeds a 1,000-note fixture vault for performance assertions (see T009)
+- [x] Passes `bats tests/integration` and `tests/run-bdd.sh`
 
 ### T009: Performance benchmark
 
@@ -136,9 +134,9 @@ Retroactive task breakdown for the v0.1 baseline. Phase 6 (added by issue #5) sw
 **Type**: Create
 **Depends**: T008, issue #1
 **Acceptance**:
-- [ ] Seeds 1,000-note vault, invokes hook 20× with varied prompts
-- [ ] Asserts p95 wall time < 300 ms (NFR)
-- [ ] Skippable via env var on slow CI runners
+- [x] Seeds 1,000-note vault, invokes hook 20× with varied prompts
+- [x] Asserts p95 wall time < 300 ms (NFR)
+- [x] Skippable via env var on slow CI runners
 
 ---
 
@@ -321,6 +319,7 @@ All Phase 6 tasks are blocked by #1 (bats-core harness).
 |-------|------|---------|
 | #10 | 2026-04-19 | Initial baseline task breakdown — documents v0.1.0 shipped implementation; testing phase deferred to #1 |
 | #5 | 2026-04-21 | Added Phase 6: extract keyword logic (T010), convert `vault-rag.sh` into a dispatcher (T011), implement embedding backend (T012) + reindex (T013) + reindex skill (T014), wire config into setup (T015) and doctor (T016), update `steering/tech.md` (T017), and add BDD + integration coverage (T018–T020). All Phase 6 tasks blocked by #1. |
+| #10 | 2026-04-22 | Landed Phase 5 testing (T008, T009) against the now-available bats-core harness: `tests/integration/vault-rag.bats` covers AC1–AC12 end-to-end, `tests/integration/vault-rag-perf.bats` enforces the <300 ms p95 NFR on a 1 000-note vault (skippable via `OBM_SKIP_PERF=1`). |
 
 ---
 
