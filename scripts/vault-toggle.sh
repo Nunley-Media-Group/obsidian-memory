@@ -94,7 +94,6 @@ ensure_preconditions() {
 }
 
 cmd_status() {
-  ensure_preconditions
   local rag distill
   IFS=$'\t' read -r rag distill < <(
     jq -r '[(.rag.enabled != false), (.distill.enabled != false)] | @tsv' "$CONFIG" 2>/dev/null
@@ -105,8 +104,6 @@ cmd_status() {
 
 cmd_set() {
   local feature="$1" new_value="$2"
-  ensure_preconditions
-
   local raw
   raw="$(read_flag "$feature")"
 
@@ -124,8 +121,6 @@ cmd_set() {
 
 cmd_flip() {
   local feature="$1"
-  ensure_preconditions
-
   local current new
   current="$(read_flag "$feature")"
   [ -n "$current" ] || current="true"
@@ -140,6 +135,8 @@ main() {
     usage_stderr
     exit 2
   fi
+
+  ensure_preconditions
 
   if [ "$#" -eq 0 ]; then
     cmd_status

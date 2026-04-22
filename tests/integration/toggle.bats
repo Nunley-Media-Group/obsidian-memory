@@ -56,17 +56,6 @@ _write_config_with_custom() {
 EOF
 }
 
-# Inode + mtime are captured together so "config unchanged" assertions can
-# prove both that the bytes did not change and that the file was not replaced
-# by a rename-in-place that preserved content but churned metadata.
-_stat_fingerprint() {
-  # macOS BSD stat vs. Linux GNU stat — use POSIX fallback syntax.
-  if stat -f '%i-%m' "$1" 2>/dev/null; then
-    return 0
-  fi
-  stat -c '%i-%Y' "$1"
-}
-
 # ---------------------------------------------------------------------------
 # Status
 # ---------------------------------------------------------------------------

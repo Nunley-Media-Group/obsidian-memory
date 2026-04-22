@@ -36,12 +36,6 @@ _toggle_write_baseline() {
 EOF
 }
 
-# BSD / GNU stat abstraction — returns "<inode>-<mtime>".
-_toggle_stat_fingerprint() {
-  if stat -f '%i-%m' "$1" 2>/dev/null; then return 0; fi
-  stat -c '%i-%Y' "$1"
-}
-
 # Parse a "vault-toggle.sh <args>" command line into an argv array passed to
 # the script. No quoting semantics are needed — the gherkin authors only pass
 # simple tokens (rag, off, status, foobar).
@@ -62,38 +56,16 @@ _toggle_run_from_cmdline() {
   TG_RC=$?
 }
 
-# Install a PATH-shadowed stub for $1 whose body is whatever is piped in via
-# the heredoc in the caller. Used by the "a 'mv' stub that always exits
-# non-zero" step.
 _toggle_install_stub() {
   local binary="$1"
-  local bindir="$BATS_TEST_TMPDIR/togglebin"
-  if [ ! -f "$bindir/.initialized" ]; then
-    mkdir -p "$bindir"
-    local d f name
-    local IFS_SAVED="$IFS"
-    IFS=':'
-    for d in $PATH; do
-      [ -d "$d" ] || continue
-      for f in "$d"/*; do
-        [ -x "$f" ] || continue
-        name="$(basename "$f")"
-        [ -e "$bindir/$name" ] && continue
-        ln -s "$f" "$bindir/$name" 2>/dev/null || true
-      done
-    done
-    IFS="$IFS_SAVED"
-    : > "$bindir/.initialized"
-  fi
-
+  _init_safe_path
+  local bindir="$BATS_TEST_TMPDIR/safebin"
   rm -f "$bindir/$binary"
   cat > "$bindir/$binary" <<'STUB'
 #!/usr/bin/env bash
 exit 1
 STUB
   chmod +x "$bindir/$binary"
-  PATH="$bindir"
-  export PATH
 }
 
 # ------------------------------------------------------------
@@ -152,7 +124,7 @@ given_a_config_with_true_and_true() {
 
 # And a snapshot of the config file's mtime and inode
 given_a_snapshot_of_the_config_file_s_mtime_and_inode() {
-  TG_SNAPSHOT="$(_toggle_stat_fingerprint "$(_config_path)")"
+  TG_SNAPSHOT="$(_stat_fingerprint "$(_config_path)")"
 }
 
 # Given there is no config file at "<path>"
@@ -232,7 +204,7 @@ then_the_config_has_set_to_true() {
 # And the config file's mtime and inode match the snapshot
 then_the_config_file_s_mtime_and_inode_match_the_snapshot() {
   local current
-  current="$(_toggle_stat_fingerprint "$(_config_path)")"
+  current="$(_stat_fingerprint "$(_config_path)")"
   [ "$current" = "$TG_SNAPSHOT" ]
 }
 
