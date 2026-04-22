@@ -74,3 +74,35 @@ assert_home_untouched() {
   fi
   return 0
 }
+
+# Snapshot + assertion pair for the distilled-sessions subtree under the
+# scratch vault. Used by teardown tests to prove that default / dry-run /
+# refusal / purge-cancelled paths never mutate the user's memory.
+_sessions_digest() {
+  local vault="$1"
+  [ -d "$vault/claude-memory" ] || return 0
+  ( cd "$vault" \
+    && find claude-memory/sessions claude-memory/Index.md \
+         \( -type f -o -type d \) -print0 2>/dev/null \
+       | LC_ALL=C sort -z \
+       | xargs -0 cksum 2>/dev/null \
+       | LC_ALL=C sort
+  )
+}
+
+snapshot_sessions() {
+  _SCRATCH_SESSIONS_DIGEST="$(_sessions_digest "$VAULT")"
+  export _SCRATCH_SESSIONS_DIGEST
+}
+
+assert_sessions_untouched() {
+  local current expected="${_SCRATCH_SESSIONS_DIGEST-}"
+  current="$(_sessions_digest "$VAULT")"
+  if [ "$current" != "$expected" ]; then
+    printf 'assert_sessions_untouched: sessions/ or Index.md digest changed\n' >&2
+    printf 'expected: %s\n' "$expected" >&2
+    printf 'actual:   %s\n' "$current" >&2
+    return 1
+  fi
+  return 0
+}

@@ -212,13 +212,19 @@ demote_sessions_to_preserve() {
   local sessions="$VAULT/claude-memory/sessions"
   local index="$VAULT/claude-memory/Index.md"
   local new=() entry
-  for entry in "${PLAN_REMOVE[@]}"; do
-    case "$entry" in
-      sessions:*|index:*) : ;;
-      *) new+=("$entry") ;;
-    esac
-  done
-  PLAN_REMOVE=("${new[@]}")
+  if [ "${#PLAN_REMOVE[@]}" -gt 0 ]; then
+    for entry in "${PLAN_REMOVE[@]}"; do
+      case "$entry" in
+        sessions:*|index:*) : ;;
+        *) new+=("$entry") ;;
+      esac
+    done
+  fi
+  if [ "${#new[@]}" -gt 0 ]; then
+    PLAN_REMOVE=("${new[@]}")
+  else
+    PLAN_REMOVE=()
+  fi
   if [ -d "$sessions" ]; then
     PLAN_PRESERVE+=("sessions:$sessions")
   fi
@@ -264,12 +270,16 @@ print_plan_section() {
 
   printf 'PLAN\n'
   local entry
-  for entry in "${PLAN_REMOVE[@]}"; do
-    _format_line "$remove_label" "$remove_color" "$entry"
-  done
-  for entry in "${PLAN_PRESERVE[@]}"; do
-    _format_line "$preserve_label" "$preserve_color" "$entry"
-  done
+  if [ "${#PLAN_REMOVE[@]}" -gt 0 ]; then
+    for entry in "${PLAN_REMOVE[@]}"; do
+      _format_line "$remove_label" "$remove_color" "$entry"
+    done
+  fi
+  if [ "${#PLAN_PRESERVE[@]}" -gt 0 ]; then
+    for entry in "${PLAN_PRESERVE[@]}"; do
+      _format_line "$preserve_label" "$preserve_color" "$entry"
+    done
+  fi
   printf '\n'
 }
 
@@ -423,16 +433,9 @@ main() {
     fi
   fi
 
-  # Fixed action order (see design → Data Flow step 8):
-  #   a. unlink projects symlink
-  #   b. (if --purge confirmed) remove sessions + Index.md
-  #   c. remove config file + cleanup empty parents
-  #   d. (if --unregister-mcp) best-effort claude mcp remove
   act_default
   if [ "$purged" -eq 1 ]; then
     act_purge
-  elif [ "$PURGE" -eq 1 ]; then
-    act_preserve_sessions_and_index
   else
     act_preserve_sessions_and_index
   fi
