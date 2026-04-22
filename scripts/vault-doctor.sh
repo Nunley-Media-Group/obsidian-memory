@@ -199,6 +199,31 @@ probe_flag_enabled() {
   fi
 }
 
+probe_scope_mode() {
+  if [ "$_config_readable" -ne 1 ] || [ "$_jq_available" -ne 1 ]; then
+    _record "scope_mode" "info" "cannot read — config or jq missing"
+    return
+  fi
+  local raw mode excluded_n allowed_n
+  raw="$(
+    jq -r '
+      (.projects.mode // "all"),
+      ((.projects.excluded // []) | length),
+      ((.projects.allowed  // []) | length)
+    ' "$CONFIG" 2>/dev/null
+  )"
+  mode="$(printf '%s' "$raw" | sed -n '1p')"
+  excluded_n="$(printf '%s' "$raw" | sed -n '2p')"
+  allowed_n="$(printf '%s' "$raw" | sed -n '3p')"
+  mode="${mode:-all}"
+  if [ "$mode" = "all" ] && [ "${excluded_n:-0}" = "0" ]; then
+    _record "scope_mode" "info" "all (unscoped)"
+  else
+    _record "scope_mode" "info" \
+      "$mode (excluded: ${excluded_n:-0}, allowed: ${allowed_n:-0})"
+  fi
+}
+
 probe_ripgrep() {
   if command -v rg >/dev/null 2>&1; then
     _record "ripgrep" "info" "$(command -v rg)"
@@ -386,6 +411,7 @@ main() {
   probe_projects_symlink
   probe_flag_enabled rag
   probe_flag_enabled distill
+  probe_scope_mode
   probe_ripgrep
   probe_mcp
 

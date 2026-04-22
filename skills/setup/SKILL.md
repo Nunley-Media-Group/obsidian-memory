@@ -40,11 +40,12 @@ Write `~/.claude/obsidian-memory/config.json`:
 {
   "vaultPath": "<expanded-vault-path>",
   "rag": { "enabled": true },
-  "distill": { "enabled": true }
+  "distill": { "enabled": true },
+  "projects": { "mode": "all", "excluded": [], "allowed": [] }
 }
 ```
 
-If the file already exists, `Read` it first and preserve any extra keys the user may have added. Only overwrite `vaultPath`.
+If the file already exists, `Read` it first and preserve any extra keys the user may have added, including a pre-existing `projects` stanza. Only overwrite `vaultPath`.
 
 ### 3. Create the memory folder and manage the projects symlink
 
