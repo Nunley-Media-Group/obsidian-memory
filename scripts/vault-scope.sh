@@ -192,7 +192,7 @@ _verb_to_key() {
   case "$1" in
     exclude) printf 'excluded' ;;
     allow)   printf 'allowed'  ;;
-    *)       printf '%s' "$1"  ;;
+    *)       log_err "unknown list verb '$1'"; return 1 ;;
   esac
 }
 

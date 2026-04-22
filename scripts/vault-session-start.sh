@@ -19,8 +19,9 @@
 
 PAYLOAD="$(om_read_payload)" || exit 0
 
-SESSION_ID="$(printf '%s' "$PAYLOAD" | jq -r '.session_id // ""' 2>/dev/null)"
-CWD="$(printf '%s' "$PAYLOAD" | jq -r '.cwd // ""' 2>/dev/null)"
+IFS=$'\t' read -r SESSION_ID CWD < <(
+  printf '%s' "$PAYLOAD" | jq -r '[.session_id // "", .cwd // ""] | @tsv' 2>/dev/null
+)
 
 [ -n "$SESSION_ID" ] || exit 0
 [ -n "$CWD" ] || CWD="$PWD"

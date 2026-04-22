@@ -49,10 +49,6 @@ om_slug() {
     | sed -E 's/-$//'
 }
 
-# Split a jq @csv-encoded line into a newline-delimited list on stdout, then
-# check whether $1 appears as an exact match. @csv wraps each element in
-# double quotes and escapes embedded quotes as ""; for slugs ([a-z0-9-]) this
-# is always plain `"slug","slug2"`.
 # Usage:  _om_slug_in_csv "$slug" "$csv"   (returns 0 if present, 1 if not)
 _om_slug_in_csv() {
   local needle="$1" csv="$2"
@@ -88,8 +84,8 @@ _om_read_projects_policy() {
     printf 'all\n\n\n'
     return 0
   fi
-  local raw mode excluded allowed
-  raw="$(
+  local mode excluded allowed
+  { IFS= read -r mode; IFS= read -r excluded; IFS= read -r allowed; } < <(
     jq -r '
       (.projects.mode // "all"),
       (
@@ -103,10 +99,7 @@ _om_read_projects_policy() {
         else "__INVALID__" end
       )
     ' "$CONFIG" 2>/dev/null
-  )"
-  mode="$(printf '%s' "$raw" | sed -n '1p')"
-  excluded="$(printf '%s' "$raw" | sed -n '2p')"
-  allowed="$(printf '%s' "$raw" | sed -n '3p')"
+  )
   mode="${mode:-all}"
 
   case "$mode" in
@@ -129,35 +122,6 @@ _om_read_projects_policy() {
   printf '%s\n%s\n%s\n' "$mode" "$excluded" "$allowed"
 }
 
-# om_project_allowed "$CWD" — return 0 if the project is permitted, 1 if not.
-# Missing / malformed shape → permissive default (mode=all, empty lists).
-# Never exits on its own.
-om_project_allowed() {
-  local cwd="${1:-$PWD}"
-  local slug
-  slug="$(om_slug "$cwd")"
-  [ -n "$slug" ] || return 0
-
-  local policy mode excluded allowed
-  policy="$(_om_read_projects_policy)"
-  mode="$(printf '%s' "$policy" | sed -n '1p')"
-  excluded="$(printf '%s' "$policy" | sed -n '2p')"
-  allowed="$(printf '%s' "$policy" | sed -n '3p')"
-
-  if [ "$mode" = "all" ]; then
-    if _om_slug_in_csv "$slug" "$excluded"; then
-      return 1
-    fi
-    return 0
-  fi
-
-  # mode = allowlist
-  if _om_slug_in_csv "$slug" "$allowed"; then
-    return 0
-  fi
-  return 1
-}
-
 # om_policy_state "$CWD" — echoes the current policy outcome for $CWD as
 # exactly one of: all | excluded | allowlist-hit | allowlist-miss.
 # Used by vault-session-start.sh to take the per-session snapshot.
@@ -170,11 +134,8 @@ om_policy_state() {
     return 0
   fi
 
-  local policy mode excluded allowed
-  policy="$(_om_read_projects_policy)"
-  mode="$(printf '%s' "$policy" | sed -n '1p')"
-  excluded="$(printf '%s' "$policy" | sed -n '2p')"
-  allowed="$(printf '%s' "$policy" | sed -n '3p')"
+  local mode excluded allowed
+  { IFS= read -r mode; IFS= read -r excluded; IFS= read -r allowed; } < <(_om_read_projects_policy)
 
   if [ "$mode" = "all" ]; then
     if _om_slug_in_csv "$slug" "$excluded"; then
@@ -190,4 +151,16 @@ om_policy_state() {
   else
     printf 'allowlist-miss\n'
   fi
+}
+
+# om_project_allowed "$CWD" — return 0 if the project is permitted, 1 if not.
+# Missing / malformed shape → permissive default (mode=all, empty lists).
+# Never exits on its own.
+om_project_allowed() {
+  local state
+  state="$(om_policy_state "${1:-$PWD}")"
+  case "$state" in
+    excluded|allowlist-miss) return 1 ;;
+    *) return 0 ;;
+  esac
 }
