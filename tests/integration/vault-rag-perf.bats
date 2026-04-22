@@ -9,11 +9,13 @@
 # `rg` fast-path is unavailable.
 
 setup() {
+  # Load before the skip check so teardown's assert_home_untouched is defined
+  # on the skipped path — bats runs teardown regardless of skip.
+  load '../helpers/scratch'
+
   if [ "${OBM_SKIP_PERF:-0}" = 1 ]; then
     skip "OBM_SKIP_PERF=1 set"
   fi
-
-  load '../helpers/scratch'
 
   RAG="$PLUGIN_ROOT/scripts/vault-rag.sh"
   CONFIG="$HOME/.claude/obsidian-memory/config.json"
@@ -22,6 +24,13 @@ setup() {
   mkdir -p "$HOME/.claude/obsidian-memory" "$HOME/.claude/projects"
   mkdir -p "$VAULT/claude-memory/sessions"
   ln -sfn "$HOME/.claude/projects" "$VAULT/claude-memory/projects"
+
+  if date +%s%N 2>/dev/null | grep -qE '^[0-9]{13,}$'; then
+    HAS_GNU_DATE=1
+  else
+    HAS_GNU_DATE=0
+  fi
+  export HAS_GNU_DATE
 
   cat > "$CONFIG" <<EOF
 {
@@ -41,10 +50,9 @@ _seed_1000_notes() {
   local words=(alpha bravo charlie delta eecho foxtrot golfo hotel india juliet \
                kilotango limat mikes november oscar papayas quebec romeos sierra tangos)
   local i wi line
-  for i in $(seq 1 1000); do
+  for i in {1..1000}; do
     wi=$(( i % 20 ))
     line="${words[$wi]} is the topic of note number $i here"
-    # ~1 KB body with mild variation across lines.
     {
       printf '%s\n' "$line"
       printf '%s\n' "$line"
@@ -56,14 +64,13 @@ _seed_1000_notes() {
 }
 
 _elapsed_ms() {
-  # Millisecond wall time for one hook invocation. Prefers GNU date's
-  # %s%N (Linux + modern macOS coreutils) for ns precision; falls back
-  # to python3 time.perf_counter on environments where %N is literal.
+  # Falls back to python3 time.perf_counter when GNU date %s%N is unavailable
+  # (HAS_GNU_DATE cached once in setup to avoid per-call subprocess overhead).
   local prompt="$1"
   local payload
   payload="$(jq -n --arg p "$prompt" '{prompt:$p}')"
 
-  if date +%s%N 2>/dev/null | grep -qE '^[0-9]{13,}$'; then
+  if [ "${HAS_GNU_DATE:-0}" = 1 ]; then
     local start end
     start="$(date +%s%N)"
     printf '%s' "$payload" | "$RAG" >/dev/null

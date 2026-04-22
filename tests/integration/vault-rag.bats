@@ -90,7 +90,7 @@ _seed_note() {
   _seed_note "my-note.md" "ripgrep not needed when grep is present"
 
   hide_binary rg
-  ! command -v rg >/dev/null 2>&1
+  [ -z "$(command -v rg)" ]
 
   run _run_rag "ripgrep fallback"
 
@@ -148,7 +148,7 @@ _seed_note() {
   _seed_note "my-note.md" "jq is used for config parsing"
 
   hide_binary jq
-  ! command -v jq >/dev/null 2>&1
+  [ -z "$(command -v jq)" ]
 
   # No jq means we cannot build the JSON payload with jq -n; hand-craft it.
   run bash -c 'printf "%s" "{\"prompt\":\"jq config parsing\"}" | "$0"' "$RAG"
@@ -192,7 +192,6 @@ _seed_note() {
   [ "$status" -eq 0 ]
   [[ "$output" == *'<vault-context source="obsidian"'* ]]
 
-  # Extract keywords="kw1,kw2,..." and count comma-separated entries.
   local kw_attr count
   kw_attr="$(printf '%s' "$output" | sed -nE 's/.*keywords="([^"]*)".*/\1/p' | head -n 1)"
   [ -n "$kw_attr" ]
@@ -206,13 +205,14 @@ _seed_note() {
   _write_config
   local kw="sharedkeyword"
   local i n
-  for i in 1 2 3 4 5 6 7 8 9 10; do
-    : > "$VAULT/note-$i.md"
-    n="$i"
-    while [ "$n" -gt 0 ]; do
-      printf '%s line %d\n' "$kw" "$n" >> "$VAULT/note-$i.md"
-      n=$((n - 1))
-    done
+  for i in {1..10}; do
+    {
+      n="$i"
+      while [ "$n" -gt 0 ]; do
+        printf '%s line %d\n' "$kw" "$n"
+        n=$((n - 1))
+      done
+    } > "$VAULT/note-$i.md"
   done
 
   run _run_rag "$kw appears frequently"
@@ -243,6 +243,7 @@ _seed_note() {
   _write_config
   _seed_note "note.md" "safe keyword test content with injection filler"
 
+  # shellcheck disable=SC2016  # literal shell metacharacters are the test fixture
   local sneaky='$(whoami) ; rm -rf /  `echo x`  '\''injection'\''  "quote"  injection'
   local user_marker
   user_marker="$(id -un)"
