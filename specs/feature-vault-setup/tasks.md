@@ -2,7 +2,7 @@
 
 **Issues**: #9
 **Date**: 2026-04-19
-**Status**: Complete (baseline — tasks describe work already shipped in v0.1.0)
+**Status**: Complete
 **Author**: Rich Nunley
 
 ---
@@ -15,7 +15,7 @@
 | Backend | 0 | N/A |
 | Frontend | 0 | N/A |
 | Integration | 2 | [x] |
-| Testing | 3 | [ ] (deferred to #1 bats-core harness) |
+| Testing | 3 | [x] |
 | **Total** | **6** | |
 
 This is a **retroactive** task breakdown. The implementation artefacts already exist in `skills/setup/SKILL.md`; the testing phase is not yet executable because the bats harness itself is tracked separately in #1.
@@ -63,7 +63,7 @@ This is a **retroactive** task breakdown. The implementation artefacts already e
 
 ## Phase 5: BDD Testing (Required)
 
-> Tasks in this phase are **deferred** until issue #1 (bats-core + cucumber-shell harness) lands. Acceptance criteria are defined here so /verify-code can execute them as soon as the harness exists.
+> Issue #1 (bats-core + cucumber-shell harness) has landed. Phase 5 tasks are now implemented against that harness.
 
 ### T004: Create BDD feature file
 
@@ -81,11 +81,11 @@ This is a **retroactive** task breakdown. The implementation artefacts already e
 **Type**: Create
 **Depends**: T004, issue #1
 **Acceptance**:
-- [ ] One step definition per Given/When/Then clause used in the 8 scenarios
-- [ ] All filesystem state lives under `$BATS_TEST_TMPDIR` (scratch `$HOME`, scratch vault)
-- [ ] Never touches the operator's real `~/.claude` or real vault
-- [ ] Stubs `claude` binary to avoid real MCP calls in CI
-- [ ] Passes under `tests/run-bdd.sh`
+- [x] One step definition per Given/When/Then clause used in the 8 scenarios
+- [x] All filesystem state lives under `$BATS_TEST_TMPDIR` (scratch `$HOME`, scratch vault)
+- [x] Never touches the operator's real `~/.claude` or real vault
+- [x] Stubs `claude` binary to avoid real MCP calls in CI
+- [x] Passes under `tests/run-bdd.sh`
 
 ### T006: Integration tests (bats)
 
@@ -93,13 +93,13 @@ This is a **retroactive** task breakdown. The implementation artefacts already e
 **Type**: Create
 **Depends**: issue #1
 **Acceptance**:
-- [ ] Test: first-run setup produces all four artefacts (AC1)
-- [ ] Test: re-running 5× produces zero drift (AC2 + success metric)
-- [ ] Test: missing vault path aborts cleanly (AC3)
-- [ ] Test: non-symlink `projects` entry is refused without deletion (AC4)
-- [ ] Test: stale symlink is repointed atomically (AC5)
-- [ ] Test: missing `jq`/`claude` does not fail setup (AC8)
-- [ ] Passes under `bats tests/integration`
+- [x] Test: first-run setup produces all four artefacts (AC1)
+- [x] Test: re-running 5× produces zero drift (AC2 + success metric)
+- [x] Test: missing vault path aborts cleanly (AC3)
+- [x] Test: non-symlink `projects` entry is refused without deletion (AC4)
+- [x] Test: stale symlink is repointed atomically (AC5)
+- [x] Test: missing `jq`/`claude` does not fail setup (AC8)
+- [x] Passes under `bats tests/integration`
 
 ---
 
