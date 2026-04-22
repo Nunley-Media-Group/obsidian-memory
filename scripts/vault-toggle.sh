@@ -21,7 +21,7 @@ TMP=""
 
 # shellcheck disable=SC2329  # invoked indirectly by the EXIT trap
 cleanup() {
-  [ -n "$TMP" ] && rm -f "$TMP" 2>/dev/null || true
+  [ -n "$TMP" ] && rm -f "$TMP" 2>/dev/null
 }
 trap cleanup EXIT
 
@@ -104,10 +104,9 @@ ensure_preconditions() {
 cmd_status() {
   ensure_preconditions
   local rag distill
-  rag="$(read_flag rag)"
-  distill="$(read_flag distill)"
-  [ -n "$rag" ] || rag="true"
-  [ -n "$distill" ] || distill="true"
+  IFS=$'\t' read -r rag distill < <(
+    jq -r '[(.rag.enabled != false), (.distill.enabled != false)] | @tsv' "$CONFIG" 2>/dev/null
+  )
   printf 'rag.enabled: %s\n' "$rag"
   printf 'distill.enabled: %s\n' "$distill"
 }
@@ -139,7 +138,6 @@ cmd_flip() {
 
   local current new
   current="$(read_flag "$feature")"
-  [ -n "$current" ] || current="true"
   if [ "$current" = "true" ]; then new="false"; else new="true"; fi
 
   write_flag "$feature" "$new" || exit 1

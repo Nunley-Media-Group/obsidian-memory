@@ -245,6 +245,9 @@ _run_feature() {
         continue
         ;;
       'Scenario Outline:'*|Examples:*)
+        if [ "$have_scenario" = 1 ]; then
+          _dispatch_scenario "$feature" "$current_name" "$steps_file" "$bg_steps" "$current_steps"
+        fi
         _log_err "warning: Scenario Outline / Examples not supported in $feature; skipping"
         in_bg=0
         have_scenario=0

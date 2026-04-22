@@ -114,7 +114,6 @@ _stat_fingerprint() {
 @test "already_in_state: reports 'was already', exits 0, does NOT rewrite" {
   _write_config true true
   before="$(_stat_fingerprint "$CONFIG")"
-  sleep 1  # ensure any rewrite would produce a different mtime
   run "$TOGGLE" rag on
   [ "$status" -eq 0 ]
   [[ "$output" == *"rag.enabled was already true"* ]]

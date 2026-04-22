@@ -10,15 +10,10 @@
 # SC2154/SC2153 fire for VAULT/HOME/PLUGIN_ROOT/BATS_TEST_TMPDIR — all
 # exported by tests/helpers/scratch.bash before this file is sourced.
 
-# Per-scenario state.
 TG_STDOUT=""
 TG_STDERR=""
 TG_RC=0
 TG_SNAPSHOT=""
-
-_toggle_config_path() {
-  printf '%s' "$HOME/.claude/obsidian-memory/config.json"
-}
 
 _toggle_script() {
   printf '%s' "$PLUGIN_ROOT/scripts/vault-toggle.sh"
@@ -27,8 +22,8 @@ _toggle_script() {
 # Write a baseline healthy config with both flags set to the given values.
 _toggle_write_baseline() {
   local rag="${1:-true}" distill="${2:-true}"
-  mkdir -p "$(dirname "$(_toggle_config_path)")"
-  cat > "$(_toggle_config_path)" <<EOF
+  mkdir -p "$(dirname "$(_config_path)")"
+  cat > "$(_config_path)" <<EOF
 {
   "vaultPath": "$VAULT",
   "rag": {
@@ -39,15 +34,6 @@ _toggle_write_baseline() {
   }
 }
 EOF
-}
-
-# Ensure a specific flag key has a specific JSON value, preserving siblings.
-_toggle_set_flag() {
-  local key="$1" value="$2" cfg tmp
-  cfg="$(_toggle_config_path)"
-  tmp="$(mktemp "$BATS_TEST_TMPDIR/toggle-cfg.XXXXXX")"
-  jq --arg k "$key" --argjson v "$value" 'setpath($k | split("."); $v)' "$cfg" > "$tmp"
-  mv "$tmp" "$cfg"
 }
 
 # BSD / GNU stat abstraction — returns "<inode>-<mtime>".
@@ -127,7 +113,7 @@ given_a_config_at_with_set_to_true() {
   local path="${1:-}" key="${2:-}"
   [ -n "$path" ] && [ -n "$key" ] || return 1
   _toggle_write_baseline true true
-  _toggle_set_flag "$key" true
+  _config_set_field "$key" true
 }
 
 # Given a config at "<path>" with "<key>" set to false
@@ -135,7 +121,7 @@ given_a_config_at_with_set_to_false() {
   local path="${1:-}" key="${2:-}"
   [ -n "$path" ] && [ -n "$key" ] || return 1
   _toggle_write_baseline true true
-  _toggle_set_flag "$key" false
+  _config_set_field "$key" false
 }
 
 # Given a config with "<key>" set to true
@@ -143,7 +129,7 @@ given_a_config_with_set_to_true() {
   local key="${1:-}"
   [ -n "$key" ] || return 1
   _toggle_write_baseline true true
-  _toggle_set_flag "$key" true
+  _config_set_field "$key" true
 }
 
 # Given a config with "rag.enabled" true and "distill.enabled" false
@@ -151,8 +137,8 @@ given_a_config_with_true_and_false() {
   local key1="${1:-}" key2="${2:-}"
   [ -n "$key1" ] && [ -n "$key2" ] || return 1
   _toggle_write_baseline true true
-  _toggle_set_flag "$key1" true
-  _toggle_set_flag "$key2" false
+  _config_set_field "$key1" true
+  _config_set_field "$key2" false
 }
 
 # Given a config with "rag.enabled" true and "distill.enabled" true
@@ -160,13 +146,13 @@ given_a_config_with_true_and_true() {
   local key1="${1:-}" key2="${2:-}"
   [ -n "$key1" ] && [ -n "$key2" ] || return 1
   _toggle_write_baseline true true
-  _toggle_set_flag "$key1" true
-  _toggle_set_flag "$key2" true
+  _config_set_field "$key1" true
+  _config_set_field "$key2" true
 }
 
 # And a snapshot of the config file's mtime and inode
 given_a_snapshot_of_the_config_file_s_mtime_and_inode() {
-  TG_SNAPSHOT="$(_toggle_stat_fingerprint "$(_toggle_config_path)")"
+  TG_SNAPSHOT="$(_toggle_stat_fingerprint "$(_config_path)")"
 }
 
 # Given there is no config file at "<path>"
@@ -181,7 +167,7 @@ given_there_is_no_config_file_at() {
 given_the_config_contains_an_unrelated_user_key_set_to_42() {
   local key="${1:-}"
   [ -n "$key" ] || return 1
-  _toggle_set_flag "$key" 42
+  _config_set_field "$key" 42
 }
 
 # And a "mv" stub on PATH that always exits non-zero
@@ -240,13 +226,13 @@ then_the_config_at_has_set_to_false() {
 then_the_config_has_set_to_true() {
   local key="${1:-}"
   [ -n "$key" ] || return 1
-  [ "$(jq -r --arg k "$key" 'getpath($k | split("."))' "$(_toggle_config_path)")" = "true" ]
+  [ "$(jq -r --arg k "$key" 'getpath($k | split("."))' "$(_config_path)")" = "true" ]
 }
 
 # And the config file's mtime and inode match the snapshot
 then_the_config_file_s_mtime_and_inode_match_the_snapshot() {
   local current
-  current="$(_toggle_stat_fingerprint "$(_toggle_config_path)")"
+  current="$(_toggle_stat_fingerprint "$(_config_path)")"
   [ "$current" = "$TG_SNAPSHOT" ]
 }
 
@@ -268,7 +254,7 @@ then_the_config_at_still_has_set_to_true() {
 then_the_config_still_has_set_to_42() {
   local key="${1:-}"
   [ -n "$key" ] || return 1
-  [ "$(jq -r --arg k "$key" 'getpath($k | split("."))' "$(_toggle_config_path)")" = "42" ]
+  [ "$(jq -r --arg k "$key" 'getpath($k | split("."))' "$(_config_path)")" = "42" ]
 }
 
 # And no ".tmp" artifact remains in "<dir>"
@@ -284,7 +270,7 @@ then_no_artifact_remains_in() {
 # And the config uses 2-space indentation
 then_the_config_uses_2_space_indentation() {
   local cfg
-  cfg="$(_toggle_config_path)"
+  cfg="$(_config_path)"
   # Two-space body lines ("  \"<key>\": ...") and four-space nested lines
   # ("    \"enabled\": ...") are both produced by `jq --indent 2`.
   grep -q '^  "' "$cfg" && grep -q '^    "enabled"' "$cfg"
