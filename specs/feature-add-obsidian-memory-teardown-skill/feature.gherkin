@@ -1,0 +1,196 @@
+# File: specs/feature-add-obsidian-memory-teardown-skill/feature.gherkin
+#
+# Generated from: specs/feature-add-obsidian-memory-teardown-skill/requirements.md
+# Issue: #3
+#
+# Every scenario runs under the bats scratch harness (tests/helpers/scratch.bash),
+# which redirects $HOME to $BATS_TEST_TMPDIR/home before any step fires. The
+# Background below documents that invariant; the harness itself is enforced by
+# tests/run-bdd.sh for every scenario.
+#
+# Scenario Outline is not supported by tests/run-bdd.sh, so each purge
+# cancellation input (`y`, `YES`, empty, EOF) and each path-safety mismatch
+# variant is its own explicit Scenario below. This mirrors the pattern in
+# specs/feature-doctor-health-check-skill/feature.gherkin.
+
+Feature: Teardown inverts obsidian-memory setup safely
+  As a Claude Code + Obsidian user who wants to uninstall or migrate vaults
+  I want a single teardown skill that is the exact inverse of /obsidian-memory:setup
+  So that I can cleanly remove the plugin's footprint without hand-tracing every path setup wrote to
+
+  Background:
+    Given a scratch $HOME at "$BATS_TEST_TMPDIR/home"
+    And   a scratch Obsidian vault at "$BATS_TEST_TMPDIR/vault"
+    And   a safe PATH with a stub claude is installed
+
+  # --- AC1: Default Teardown ---
+
+  Scenario: Default teardown removes config and symlink, preserves distilled notes
+    Given a baseline-healthy obsidian-memory install
+    And   the sessions directory contains 3 distilled note files
+    When  I run "/obsidian-memory:teardown"
+    Then  the config file at "~/.claude/obsidian-memory/config.json" no longer exists
+    And   the projects symlink under the vault no longer exists
+    And   the sessions directory under the vault is preserved byte-for-byte
+    And   the Index.md under the vault is preserved byte-for-byte
+    And   the teardown output contains "REMOVED"
+    And   the teardown output contains "PRESERVED"
+    And   the teardown exit code is 0
+
+  # --- AC2: --purge with Typed "yes" ---
+
+  Scenario: Purge with typed "yes" deletes distilled notes
+    Given a baseline-healthy obsidian-memory install
+    And   the sessions directory contains 5 distilled note files
+    When  I run "/obsidian-memory:teardown --purge" and type "yes" at the confirmation prompt
+    Then  the config file at "~/.claude/obsidian-memory/config.json" no longer exists
+    And   the projects symlink under the vault no longer exists
+    And   the sessions directory under the vault no longer exists
+    And   the Index.md under the vault no longer exists
+    And   the teardown output contains "Distilled notes deleted"
+    And   the teardown exit code is 0
+
+  # --- AC2: --purge Cancellation Variants ---
+
+  Scenario: Purge with "y" cancels the purge and preserves sessions
+    Given a baseline-healthy obsidian-memory install
+    And   the sessions directory contains 5 distilled note files
+    When  I run "/obsidian-memory:teardown --purge" and type "y" at the confirmation prompt
+    Then  the sessions directory under the vault is preserved byte-for-byte
+    And   the Index.md under the vault is preserved byte-for-byte
+    And   the teardown output contains "purge cancelled"
+    And   the teardown exit code is 0
+
+  Scenario: Purge with "YES" (uppercase) cancels the purge and preserves sessions
+    Given a baseline-healthy obsidian-memory install
+    And   the sessions directory contains 5 distilled note files
+    When  I run "/obsidian-memory:teardown --purge" and type "YES" at the confirmation prompt
+    Then  the sessions directory under the vault is preserved byte-for-byte
+    And   the Index.md under the vault is preserved byte-for-byte
+    And   the teardown output contains "purge cancelled"
+    And   the teardown exit code is 0
+
+  Scenario: Purge with an empty line cancels the purge and preserves sessions
+    Given a baseline-healthy obsidian-memory install
+    And   the sessions directory contains 5 distilled note files
+    When  I run "/obsidian-memory:teardown --purge" and type an empty line at the confirmation prompt
+    Then  the sessions directory under the vault is preserved byte-for-byte
+    And   the Index.md under the vault is preserved byte-for-byte
+    And   the teardown output contains "purge cancelled"
+    And   the teardown exit code is 0
+
+  Scenario: Purge with EOF on stdin cancels the purge and preserves sessions
+    Given a baseline-healthy obsidian-memory install
+    And   the sessions directory contains 5 distilled note files
+    When  I run "/obsidian-memory:teardown --purge" with no input on stdin
+    Then  the sessions directory under the vault is preserved byte-for-byte
+    And   the Index.md under the vault is preserved byte-for-byte
+    And   the teardown output contains "purge cancelled"
+    And   the teardown exit code is 0
+
+  # --- AC3: --unregister-mcp ---
+
+  Scenario: --unregister-mcp removes the MCP server registration
+    Given a baseline-healthy obsidian-memory install
+    And   a stub claude that succeeds on "mcp remove obsidian"
+    When  I run "/obsidian-memory:teardown --unregister-mcp"
+    Then  the stub claude was invoked with "mcp remove obsidian -s user"
+    And   the teardown output contains "MCP"
+    And   the teardown exit code is 0
+
+  Scenario: --unregister-mcp treats a non-zero claude exit as non-fatal
+    Given a baseline-healthy obsidian-memory install
+    And   a stub claude that exits non-zero on "mcp remove obsidian"
+    When  I run "/obsidian-memory:teardown --unregister-mcp"
+    Then  the teardown output contains "MCP"
+    And   the config file at "~/.claude/obsidian-memory/config.json" no longer exists
+    And   the projects symlink under the vault no longer exists
+    And   the teardown exit code is 0
+
+  # --- AC4: Path-Safety Refusal ---
+
+  Scenario: Refuses when the vault has no claude-memory directory
+    Given a baseline-healthy obsidian-memory install
+    And   the vault's "claude-memory" directory has been removed
+    When  I run "/obsidian-memory:teardown"
+    Then  the teardown output contains "REFUSED"
+    And   the teardown output contains "/obsidian-memory:doctor"
+    And   the config file at "~/.claude/obsidian-memory/config.json" still exists
+    And   the teardown exit code is non-zero
+
+  Scenario: Refuses when projects is a regular directory, not a symlink
+    Given a baseline-healthy obsidian-memory install
+    And   the projects entry under the vault is replaced with a regular directory
+    When  I run "/obsidian-memory:teardown"
+    Then  the teardown output contains "REFUSED"
+    And   the teardown output contains "/obsidian-memory:doctor"
+    And   the config file at "~/.claude/obsidian-memory/config.json" still exists
+    And   the projects directory under the vault is not removed
+    And   the teardown exit code is non-zero
+
+  Scenario: Refuses when the projects symlink targets an unrelated path
+    Given a baseline-healthy obsidian-memory install
+    And   the projects symlink under the vault targets an unrelated directory
+    When  I run "/obsidian-memory:teardown"
+    Then  the teardown output contains "REFUSED"
+    And   the teardown output contains "/obsidian-memory:doctor"
+    And   the config file at "~/.claude/obsidian-memory/config.json" still exists
+    And   the projects symlink under the vault still exists
+    And   the teardown exit code is non-zero
+
+  Scenario: Refuses when the configured vault path does not exist on disk
+    Given a baseline-healthy obsidian-memory install
+    And   the configured vaultPath has been moved to a non-existent directory
+    When  I run "/obsidian-memory:teardown"
+    Then  the teardown output contains "REFUSED"
+    And   the teardown output contains "/obsidian-memory:doctor"
+    And   the config file at "~/.claude/obsidian-memory/config.json" still exists
+    And   the teardown exit code is non-zero
+
+  # --- AC5: Idempotency ---
+
+  Scenario: Teardown with no config at all is a no-op
+    Given no obsidian-memory config exists
+    When  I run "/obsidian-memory:teardown"
+    Then  the teardown output contains "nothing to do"
+    And   no file under "~/.claude/obsidian-memory" is created
+    And   the teardown exit code is 0
+
+  Scenario: Running teardown twice is a no-op on the second run
+    Given a baseline-healthy obsidian-memory install
+    When  I run "/obsidian-memory:teardown"
+    And   I run "/obsidian-memory:teardown" again
+    Then  the second run's output contains "nothing to do"
+    And   the second run's exit code is 0
+
+  # --- AC6: --dry-run ---
+
+  Scenario: --dry-run on a healthy install prints the plan and touches nothing
+    Given a baseline-healthy obsidian-memory install
+    And   the sessions directory contains 4 distilled note files
+    When  I run "/obsidian-memory:teardown --dry-run"
+    Then  the teardown output contains "WOULD REMOVE"
+    And   the teardown output contains "WOULD PRESERVE"
+    And   the config file at "~/.claude/obsidian-memory/config.json" still exists
+    And   the projects symlink under the vault still exists
+    And   the sessions directory under the vault is preserved byte-for-byte
+    And   the Index.md under the vault is preserved byte-for-byte
+    And   the teardown exit code is 0
+
+  Scenario: --dry-run --purge lists sessions under WOULD REMOVE without prompting
+    Given a baseline-healthy obsidian-memory install
+    And   the sessions directory contains 4 distilled note files
+    When  I run "/obsidian-memory:teardown --dry-run --purge" with no input on stdin
+    Then  the teardown output contains "WOULD REMOVE"
+    And   the teardown output contains the sessions directory path under WOULD REMOVE
+    And   the teardown output does not contain a "Type 'yes'" prompt
+    And   the sessions directory under the vault is preserved byte-for-byte
+    And   the Index.md under the vault is preserved byte-for-byte
+    And   the teardown exit code is 0
+
+  Scenario: --dry-run --unregister-mcp does not invoke claude mcp remove
+    Given a baseline-healthy obsidian-memory install
+    And   a stub claude that records every invocation
+    When  I run "/obsidian-memory:teardown --dry-run --unregister-mcp"
+    Then  the stub claude was not invoked
+    And   the teardown exit code is 0

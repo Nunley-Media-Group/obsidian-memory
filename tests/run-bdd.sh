@@ -37,6 +37,7 @@ _step_file_for() {
     feature-session-distillation-hook)                printf '%s' "$STEPS_DIR/distill.sh" ;;
     feature-manual-distill-skill)                     printf '%s' "$STEPS_DIR/manual-distill.sh" ;;
     feature-doctor-health-check-skill)                printf '%s' "$STEPS_DIR/doctor.sh" ;;
+    feature-add-obsidian-memory-teardown-skill)       printf '%s' "$STEPS_DIR/teardown.sh" ;;
     feature-set-up-bats-core-cucumber-shell-test-harness) printf '%s' "$STEPS_DIR/harness.sh" ;;
     example)                                          printf '%s' "$STEPS_DIR/example.sh" ;;
     *)
