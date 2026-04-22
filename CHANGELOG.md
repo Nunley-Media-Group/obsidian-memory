@@ -4,6 +4,14 @@ All notable changes to plugins in this marketplace are documented here. Format f
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-04-21
+
+### Added
+
+- `/obsidian-memory:doctor` skill — on-demand health check that surfaces silent install failures without mutating any state. Reports `OK`/`FAIL` per check (config presence, vault path, `jq`/`claude`/`ripgrep` on PATH, `claude-memory/sessions/` directory, `claude-memory/projects` symlink, `rag.enabled`/`distill.enabled` flags) with one-line remediation hints. Exits 0 if all checks pass, non-zero on any failure. Supports `--json` for machine-readable output.
+
+## [0.1.0] - 2026-04-21
+
 ### Added
 
 - **obsidian-memory 0.1.0** — new plugin providing automatic, Obsidian-backed cross-session memory for Claude Code.
