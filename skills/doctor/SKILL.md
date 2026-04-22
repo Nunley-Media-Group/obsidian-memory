@@ -51,6 +51,7 @@ The script itself is read-only: no `>`, `>>`, `mv`, `rm`, `ln`, or `mkdir` anywh
 | `rag_enabled` | ok / fail | `run /obsidian-memory:toggle rag on` |
 | `distill_enabled` | ok / fail | `run /obsidian-memory:toggle distill on` |
 | `scope_mode` | info | (informational; reports `projects.mode` and excluded/allowed counts — adjust with `/obsidian-memory:scope`) |
+| `distill_template` | info | (informational; reports the active distillation template — `default (bundled)`, `global: <path>`, `project-override(<slug>): <path>`, or `configured but unreadable — falling back to default`. Configure via `distill.template_path` in `~/.claude/obsidian-memory/config.json`.) |
 | `ripgrep` | info | (optional; vault-rag.sh falls back to POSIX `grep -r`) |
 | `mcp` | info | (optional; Obsidian MCP server registration) |
 

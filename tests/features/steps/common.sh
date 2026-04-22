@@ -5,9 +5,11 @@
 # Every step function is idempotent and writes only under $BATS_TEST_TMPDIR.
 
 # shellcheck shell=bash
-# shellcheck disable=SC2154,SC2153
+# shellcheck disable=SC2154,SC2153,SC2034
 # SC2154/SC2153 fire for VAULT/HOME/PLUGIN_ROOT/HELPERS_DIR — all set by
 # tests/helpers/scratch.bash and tests/run-bdd.sh before common.sh is sourced.
+# SC2034: _distill_invoke sets DISTILL_STDERR/DISTILL_RC for consumers in the
+# feature-specific step files.
 
 # shellcheck disable=SC1091
 . "$HELPERS_DIR/fake-claude.bash"
@@ -85,6 +87,35 @@ _config_get_field() {
 # cksum-based content hash of a single file.
 _hash_file() {
   [ -f "$1" ] && cksum < "$1" 2>/dev/null || true
+}
+
+# Shared distillation-test helpers. Multiple feature step files drive
+# vault-distill.sh through the same payload shape, so the fixture seed /
+# hook-invocation / note-lookup trio lives here.
+_seed_transcript() {
+  # $1 = path, $2 = target byte size. Each line is a ~260 B user JSONL entry.
+  local path="$1" size="$2"
+  mkdir -p "$(dirname "$path")"
+  : > "$path"
+  local msg i=0
+  while [ "$(wc -c < "$path" | tr -d ' ')" -lt "$size" ]; do
+    msg="$(printf '{"type":"user","message":{"content":[{"type":"text","text":"Sample message %d about config parsing with jq and file paths"}]}}' "$i")"
+    printf '%s\n' "$msg" >> "$path"
+    i=$((i + 1))
+  done
+}
+
+_distill_invoke() {
+  local t="$1" c="$2" s="$3" r="$4"
+  local payload
+  payload="$(printf '{"transcript_path":"%s","cwd":"%s","session_id":"%s","reason":"%s"}' "$t" "$c" "$s" "$r")"
+  DISTILL_STDERR="$(mktemp "$BATS_TEST_TMPDIR/distill-stderr.XXXXXX")"
+  printf '%s' "$payload" | "$PLUGIN_ROOT/scripts/vault-distill.sh" >/dev/null 2>"$DISTILL_STDERR"
+  DISTILL_RC=$?
+}
+
+_latest_note_in() {
+  find "$1" -type f -name '*.md' 2>/dev/null | sort | tail -n 1
 }
 
 # Given a scratch HOME at "$BATS_TEST_TMPDIR/home"

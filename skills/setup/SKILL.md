@@ -114,6 +114,62 @@ Print a summary:
 - MCP registration status
 - Missing dependencies (if any)
 
+## Customizing the distillation template
+
+The distillation hook (`vault-distill.sh`) drives `claude -p` with a Markdown template. By default it ships a bundled template at `<plugin-root>/templates/default-distillation.md` that produces the v0.1 **Summary / Decisions / Patterns & Gotchas / Open Threads / Tags** layout. To customize the layout, copy the bundled file and point config at the copy:
+
+```bash
+mkdir -p "$HOME/.claude/obsidian-memory/templates"
+cp "<plugin-root>/templates/default-distillation.md" \
+   "$HOME/.claude/obsidian-memory/templates/my-template.md"
+$EDITOR "$HOME/.claude/obsidian-memory/templates/my-template.md"
+```
+
+Then add `distill.template_path` to `~/.claude/obsidian-memory/config.json`:
+
+```json
+{
+  "distill": { "enabled": true, "template_path": "/Users/me/.claude/obsidian-memory/templates/my-template.md" }
+}
+```
+
+### Template variables
+
+Only these six `{{…}}` tokens are substituted — everything else passes through verbatim:
+
+| Token | Value |
+|---|---|
+| `{{project_slug}}` | `[a-z0-9-]` slug derived from the session's `cwd` |
+| `{{date}}` | UTC date (`YYYY-MM-DD`) at session end |
+| `{{time}}` | UTC time (`HH:MM:SS`) at session end |
+| `{{session_id}}` | Claude Code session id from the hook payload |
+| `{{transcript_path}}` | absolute path to the JSONL transcript |
+| `{{transcript}}` | the extracted user+assistant conversation (~200 KB cap) |
+
+`$VAR`, `${VAR}`, backticks, and `$(…)` in the template are **never expanded** — substitution is literal-only (jq `gsub`), so templates cannot trigger shell execution even if sourced from elsewhere.
+
+### Optional YAML frontmatter
+
+If the template begins with a `---` delimited YAML frontmatter block, the hook emits **that** block (after variable substitution) as the note's frontmatter and skips its default seven-field block. Anything after the closing `---` is the distillation prompt body.
+
+### Per-project overrides
+
+To use a different template for a specific project, add `projects.overrides.<slug>.distill.template_path` — it takes precedence over the global `distill.template_path` for that slug. For example:
+
+```json
+{
+  "projects": {
+    "overrides": {
+      "widgets": {
+        "distill": { "template_path": "/Users/me/.claude/obsidian-memory/templates/work-note.md" }
+      }
+    }
+  }
+}
+```
+
+If a configured path is missing, unreadable, or empty, the hook logs one stderr line and falls back to the bundled default — the session note is never lost. Use `/obsidian-memory:doctor` to see which template is active for the current project.
+
 ## Error states
 
 | Condition | Behavior |

@@ -55,7 +55,6 @@ SLUG="$(om_slug "$CWD")"
 
 NOW_STAMP="$(date -u +%Y-%m-%d-%H%M%S)"
 NOW_DATE="${NOW_STAMP%-*}"
-NOW_DATE="${NOW_DATE%-*}"
 NOW_TIME="${NOW_STAMP##*-}"
 NOW_TIME="${NOW_TIME:0:2}:${NOW_TIME:2:2}:${NOW_TIME:4:2}"
 
@@ -89,46 +88,39 @@ CONVO="$(
 )"
 [ -n "$CONVO" ] || exit 0
 
-PROMPT="You are distilling a Claude Code session transcript into a concise Obsidian note.
+TEMPLATE_PATH="$(om_resolve_distill_template "$SLUG")"
+TMPL_RAW="$(cat "$TEMPLATE_PATH")"
 
-Output ONLY the note body in Markdown. No preamble. No outer code fences.
+SPLIT="$(om_split_frontmatter "$TMPL_RAW"; printf x)"
+SPLIT="${SPLIT%x}"
+FM_RAW="${SPLIT%%$'\x1e'*}"
+BODY_RAW="${SPLIT#*$'\x1e'}"
 
-Include these sections (omit any that would be empty):
-
-## Summary
-Two or three sentences describing what the session accomplished.
-
-## Decisions
-Notable choices and the reasoning behind them.
-
-## Patterns & Gotchas
-Specific file paths, commands, identifiers, or non-obvious constraints worth remembering.
-
-## Open Threads
-What is unfinished or should be picked up next.
-
-## Tags
-A single space-separated line starting with #project/${SLUG}, plus 3–5 topical tags.
-
-Use Obsidian [[wiki-links]] for salient entities (files, functions, concepts). Cap the note at ~500 words.
-
-TRANSCRIPT:
-
-${CONVO}"
+FM_OUT="$(om_render "$FM_RAW")"
+PROMPT="$(om_render "$BODY_RAW")"
 
 # CLAUDECODE="" avoids the "Cannot be launched inside another Claude Code session" guard.
 NOTE_BODY="$(CLAUDECODE="" claude -p "$PROMPT" 2>/dev/null)"
 
 {
-  printf -- '---\n'
-  printf 'date: %s\n' "$NOW_DATE"
-  printf 'time: %s\n' "$NOW_TIME"
-  printf 'session_id: %s\n' "$SESSION_ID"
-  printf 'project: %s\n' "$SLUG"
-  printf 'cwd: %s\n' "$CWD"
-  printf 'end_reason: %s\n' "$REASON"
-  printf 'source: claude-code\n'
-  printf -- '---\n\n'
+  if [ -n "$FM_OUT" ]; then
+    # Strip trailing newlines so the emitted "\n\n" produces exactly one blank
+    # line between the frontmatter and the body (AC5).
+    while [ "${FM_OUT: -1}" = $'\n' ]; do
+      FM_OUT="${FM_OUT%$'\n'}"
+    done
+    printf '%s\n\n' "$FM_OUT"
+  else
+    printf -- '---\n'
+    printf 'date: %s\n' "$NOW_DATE"
+    printf 'time: %s\n' "$NOW_TIME"
+    printf 'session_id: %s\n' "$SESSION_ID"
+    printf 'project: %s\n' "$SLUG"
+    printf 'cwd: %s\n' "$CWD"
+    printf 'end_reason: %s\n' "$REASON"
+    printf 'source: claude-code\n'
+    printf -- '---\n\n'
+  fi
   if [ -n "$NOTE_BODY" ]; then
     printf '%s\n' "$NOTE_BODY"
   else

@@ -7,38 +7,10 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2154,SC2153
 
-DISTILL_STDERR=""
-DISTILL_RC=0
+# DISTILL_STDERR / DISTILL_RC are populated by _distill_invoke in common.sh.
 DISTILL_TRANSCRIPT=""
 DISTILL_CWD=""
 DISTILL_SESSION_ID=""
-
-_seed_transcript() {
-  # $1 = path under $HOME/.claude/projects, $2 = target byte size
-  local path="$1" size="$2"
-  mkdir -p "$(dirname "$path")"
-  : > "$path"
-  # Each line is a valid user/assistant message JSONL entry of ~260 bytes.
-  local msg i=0
-  while [ "$(wc -c < "$path" | tr -d ' ')" -lt "$size" ]; do
-    msg="$(printf '{"type":"user","message":{"content":[{"type":"text","text":"Sample message %d about config parsing with jq and file paths"}]}}' "$i")"
-    printf '%s\n' "$msg" >> "$path"
-    i=$((i + 1))
-  done
-}
-
-_distill_invoke() {
-  local t="$1" c="$2" s="$3" r="$4"
-  local payload
-  payload="$(printf '{"transcript_path":"%s","cwd":"%s","session_id":"%s","reason":"%s"}' "$t" "$c" "$s" "$r")"
-  DISTILL_STDERR="$(mktemp "$BATS_TEST_TMPDIR/distill-stderr.XXXXXX")"
-  printf '%s' "$payload" | "$PLUGIN_ROOT/scripts/vault-distill.sh" >/dev/null 2>"$DISTILL_STDERR"
-  DISTILL_RC=$?
-}
-
-_latest_note_in() {
-  find "$1" -type f -name '*.md' 2>/dev/null | sort | tail -n 1
-}
 
 # ------------------------------------------------------------
 # Given steps

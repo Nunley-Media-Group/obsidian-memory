@@ -1,0 +1,101 @@
+# File: specs/feature-make-distillation-template-configurable/feature.gherkin
+#
+# Generated from: specs/feature-make-distillation-template-configurable/requirements.md
+# Issue: #7
+#
+# Runner note: tests/run-bdd.sh supports only single-line steps with quoted
+# literals; DocStrings are silently skipped. Template bodies are therefore
+# expressed as \n-escaped strings that the step helpers decode via printf %b,
+# matching the `with content` pattern already used by other features.
+
+Feature: Configurable distillation template
+  As a Claude Code + Obsidian power user with a strong opinion on note formatting
+  I want to customize the Markdown template used by vault-distill.sh
+  So that my vault notes follow my existing conventions instead of the plugin's opinionated default
+
+  Background:
+    Given a scratch HOME at "$BATS_TEST_TMPDIR/home"
+    And a scratch Obsidian vault at "$BATS_TEST_TMPDIR/vault"
+    And obsidian-memory is installed and setup against "$VAULT"
+    And a stub "claude" CLI is on PATH returning a fixed distillation by default
+    And a prompt-capturing claude stub is installed at "$BATS_TEST_TMPDIR/bin"
+    And a transcript at "$HOME/.claude/projects/widgets/sess.jsonl" of size 5000 bytes
+
+  # --- AC1: Custom template overrides the default ---
+
+  Scenario: A user-provided template path overrides the default
+    Given a readable template at "$HOME/.claude/obsidian-memory/templates/mine.md" with content "# {{project_slug}} — {{date}}\n\n## What Happened\n\n{{transcript}}\n\n## Next\n\n(filled in by claude)\n"
+    And the config sets "distill.template_path" to "$HOME/.claude/obsidian-memory/templates/mine.md"
+    When SessionEnd fires with cwd "/tmp/widgets", session_id "abc123"
+    Then the captured prompt starts with "# widgets — " followed by today's UTC date
+    And the captured prompt contains "## What Happened"
+    And the captured prompt does NOT contain the bare token "{{project_slug}}"
+    And the captured prompt does NOT contain the bare token "{{date}}"
+    And the captured prompt does NOT contain the bare token "{{transcript}}"
+    And a session note file exists under "$VAULT/claude-memory/sessions/widgets/"
+    And the hook exit code is 0
+
+  # --- AC2: Default behavior unchanged when no template_path is configured ---
+
+  Scenario: Default behavior when no template_path is configured
+    When SessionEnd fires with cwd "/tmp/widgets", session_id "abc123"
+    Then the captured prompt prefix matches the golden fixture "tests/fixtures/distill/v0.1-prompt.txt"
+    And the latest session note under "$VAULT/claude-memory/sessions/widgets/" starts with a YAML frontmatter block with keys in order "date,time,session_id,project,cwd,end_reason,source"
+    And the Index.md line under "$VAULT/claude-memory/Index.md" matches the v0.1 pattern "^- \[\[sessions/widgets/[0-9-]+\.md\]\] — widgets \([0-9-]+ [0-9:]+ UTC\)$"
+    And the hook exit code is 0
+
+  Scenario: Explicitly pointing at the bundled default matches the unconfigured behavior
+    Given the config sets "distill.template_path" to the bundled default template
+    When SessionEnd fires with cwd "/tmp/widgets", session_id "abc123"
+    Then the captured prompt prefix matches the golden fixture "tests/fixtures/distill/v0.1-prompt.txt"
+    And the hook exit code is 0
+
+  # --- AC3: Missing / unreadable template falls back to default ---
+
+  Scenario: Unreadable template_path falls back to the bundled default
+    Given the config sets "distill.template_path" to "$HOME/does/not/exist.md"
+    When SessionEnd fires with cwd "/tmp/widgets", session_id "abc123"
+    Then the hook stderr contains exactly one line matching "^\[vault-distill\.sh\] distill\.template_path=.* unreadable; falling back to default template$"
+    And the captured prompt prefix matches the golden fixture "tests/fixtures/distill/v0.1-prompt.txt"
+    And a session note file exists under "$VAULT/claude-memory/sessions/widgets/"
+    And the hook exit code is 0
+
+  Scenario: Empty-file template_path falls back to the bundled default
+    Given an empty file at "$HOME/.claude/obsidian-memory/templates/empty.md"
+    And the config sets "distill.template_path" to "$HOME/.claude/obsidian-memory/templates/empty.md"
+    When SessionEnd fires with cwd "/tmp/widgets", session_id "abc123"
+    Then the hook stderr contains exactly one line matching "^\[vault-distill\.sh\] distill\.template_path=.* unreadable; falling back to default template$"
+    And the captured prompt prefix matches the golden fixture "tests/fixtures/distill/v0.1-prompt.txt"
+    And the hook exit code is 0
+
+  # --- AC4: Substitution is safe — only whitelisted {{...}} tokens are replaced ---
+
+  Scenario: Shell-looking syntax in the template is NOT expanded
+    Given a readable template at "$HOME/.claude/obsidian-memory/templates/safe.md" with content "# {{project_slug}} on {{date}}\n\nHOME is $HOME — this should be literal\nBackticks: `whoami` — literal\nSubstitution: $(date) — literal\nBraced: ${PATH} — literal\nNon-whitelist: {{user_email}} — literal placeholder\nWhitelist: transcript_path is {{transcript_path}}\n\n{{transcript}}\n"
+    And the config sets "distill.template_path" to "$HOME/.claude/obsidian-memory/templates/safe.md"
+    When SessionEnd fires with cwd "/tmp/widgets", session_id "abc123"
+    Then the captured prompt contains the literal substring "HOME is $HOME — this should be literal"
+    And the captured prompt contains the literal substring "Backticks: `whoami` — literal"
+    And the captured prompt contains the literal substring "Substitution: $(date) — literal"
+    And the captured prompt contains the literal substring "Braced: ${PATH} — literal"
+    And the captured prompt contains the literal substring "Non-whitelist: {{user_email}} — literal placeholder"
+    And the captured prompt contains "# widgets on " followed by today's UTC date
+    And the captured prompt does NOT contain the bare token "{{project_slug}}"
+    And the captured prompt does NOT contain the bare token "{{date}}"
+    And the captured prompt does NOT contain the bare token "{{transcript_path}}"
+    And the hook exit code is 0
+
+  # --- AC5: Custom frontmatter is preserved in the output ---
+
+  Scenario: Template-supplied YAML frontmatter replaces the default seven-field block
+    Given a readable template at "$HOME/.claude/obsidian-memory/templates/fm.md" with content "---\ntitle: \"{{project_slug}} — {{date}}\"\ntags: [daily-note]\nsource: claude-code\n---\n\n# Summary\n\n{{transcript}}\n"
+    And the config sets "distill.template_path" to "$HOME/.claude/obsidian-memory/templates/fm.md"
+    When SessionEnd fires with cwd "/tmp/widgets", session_id "abc123"
+    Then the latest session note under "$VAULT/claude-memory/sessions/widgets/" starts with exactly 5 frontmatter lines beginning with "---" and ending with "---"
+    And the latest session note first frontmatter line is "---"
+    And the latest session note second frontmatter line starts with "title: \"widgets — "
+    And the latest session note third frontmatter line is "tags: [daily-note]"
+    And the latest session note fourth frontmatter line is "source: claude-code"
+    And the latest session note does NOT contain a second frontmatter block with "end_reason:"
+    And the captured prompt does NOT contain "---\n" at the start
+    And the hook exit code is 0
