@@ -4,6 +4,12 @@ All notable changes to plugins in this marketplace are documented here. Format f
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-04-21
+
+### Added
+
+- Embedding-based RAG retrieval in `vault-rag.sh` via `ollama` (local-first). Adds `rag.backend` config key (`"keyword"` | `"embedding"`, default `"keyword"`), graceful fallback to keyword path on backend failure, async index rebuild via `/obsidian-memory:reindex` skill, index stored under `~/.claude/obsidian-memory/index/`. Closes #5.
+
 ## [0.3.0] - 2026-04-21
 
 ### Added

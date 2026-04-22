@@ -112,3 +112,63 @@ Feature: RAG prompt injection hook
     And no "whoami" output appears in the hook output
     And the hook exits 0
     And any "<vault-context>" block contains only literal keyword text
+
+  # Added by issue #5 — embedding-backend scenarios
+
+  Scenario: Embedding backend returns semantically relevant matches
+    Given a vault containing "note-a.md" about "database migrations and schema versioning"
+    And a vault containing "note-b.md" about "rendering a D&D campaign map in Obsidian"
+    And the config has "rag.backend" set to "embedding"
+    And a stub ollama daemon is running at the configured endpoint
+    And a current embeddings index exists at "$HOME/.claude/obsidian-memory/index/embeddings.jsonl"
+    When the user submits a prompt "how do I handle schema drift between envs"
+    Then the "<vault-context>" block lists "note-a.md" ranked higher than "note-b.md"
+    And the block carries the attribute "backend=\"embedding\""
+    And the hook exit code is 0
+
+  Scenario: Embedding backend falls back to keyword when ollama is unreachable
+    Given a vault file "note.md" containing "ripgrep fallback keyword test"
+    And the config has "rag.backend" set to "embedding"
+    And no ollama daemon is listening at the configured endpoint
+    When the user submits a prompt containing "fallback"
+    Then the hook emits a "<vault-context>" block containing "note.md"
+    And the block's "backend" attribute is "keyword" or absent
+    And a single one-line fallback reason is present on stderr
+    And the hook exit code is 0
+
+  Scenario: Embedding backend falls back when the index file is missing
+    Given a vault file "note.md" containing "indexing missing case"
+    And the config has "rag.backend" set to "embedding"
+    And a stub ollama daemon is running at the configured endpoint
+    And no index file exists at "$HOME/.claude/obsidian-memory/index/embeddings.jsonl"
+    When the user submits any prompt matching "note.md"
+    Then the hook emits the keyword-path "<vault-context>" block
+    And stderr contains the hint "run /obsidian-memory:reindex"
+    And the hook exit code is 0
+
+  Scenario: Embedding backend never rebuilds the index on the hot path
+    Given the config has "rag.backend" set to "embedding"
+    And an existing embeddings index whose mtime precedes every vault note's mtime
+    And a stub ollama daemon is running at the configured endpoint
+    When the user submits any prompt
+    Then the hook uses the existing index as-is
+    And no indexing subprocess (reindex.sh or ollama embed of any vault note) is spawned during the invocation
+    And the hook exit code is 0
+
+  Scenario: Index location is known and user-visible
+    Given the config has "rag.backend" set to "embedding"
+    And a stub ollama daemon is running at the configured endpoint
+    When the user runs "/obsidian-memory:reindex" to completion
+    Then exactly one file exists at "$HOME/.claude/obsidian-memory/index/embeddings.jsonl"
+    And exactly one file exists at "$HOME/.claude/obsidian-memory/index/embeddings.meta.json"
+    And no index artifact exists anywhere under "$VAULT"
+    And "/obsidian-memory:doctor" prints an informational line naming the index path and its mtime
+
+  Scenario: Keyword path is preserved bit-for-bit through the dispatcher
+    Given the config has "rag.backend" set to "keyword"
+    And a vault file "my-note.md" containing "jq is used for config parsing"
+    When the user submits a prompt containing "jq"
+    Then the hook stdout is identical to the v0.1 keyword-path output for the same fixtures
+    And no ollama HTTP call is made
+    And no index file is read
+    And the hook exit code is 0
