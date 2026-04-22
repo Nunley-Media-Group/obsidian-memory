@@ -9,6 +9,13 @@ set -u
 
 # shellcheck disable=SC2329  # invoked indirectly by the ERR trap
 log_err() { printf '[%s] %s\n' "$(basename "$0")" "$*" >&2; }
+
+# Source the shared helpers (pulls in om_describe_distill_template, om_slug,
+# etc.). _common.sh installs its own `trap 'exit 0' ERR` for hook-safety —
+# doctor re-installs its own ERR trap immediately after so an unexpected
+# failure still exits 1 (doctor's contract) instead of 0 (hook contract).
+# shellcheck source=scripts/_common.sh
+. "$(dirname "$0")/_common.sh"
 trap 'log_err "failed at line $LINENO"; exit 1' ERR
 
 CONFIG="${HOME}/.claude/obsidian-memory/config.json"
@@ -221,6 +228,21 @@ probe_scope_mode() {
   fi
 }
 
+probe_distill_template() {
+  # Reports the active distillation template as an info line. Runs regardless
+  # of distill.enabled — a mis-configured template_path is worth surfacing
+  # even while the feature is toggled off.
+  if [ "$_config_readable" -ne 1 ] || [ "$_jq_available" -ne 1 ]; then
+    _record "distill_template" "info" "cannot read — config or jq missing"
+    return
+  fi
+  local slug descriptor
+  slug="$(om_slug "${PWD:-$HOME}")"
+  [ -n "$slug" ] || slug="unknown"
+  descriptor="$(om_describe_distill_template "$slug")"
+  _record "distill_template" "info" "$descriptor"
+}
+
 probe_ripgrep() {
   if command -v rg >/dev/null 2>&1; then
     _record "ripgrep" "info" "$(command -v rg)"
@@ -409,6 +431,7 @@ main() {
   probe_flag_enabled rag
   probe_flag_enabled distill
   probe_scope_mode
+  probe_distill_template
   probe_ripgrep
   probe_mcp
 
