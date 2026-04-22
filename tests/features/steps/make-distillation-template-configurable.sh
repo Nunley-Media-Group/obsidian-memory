@@ -45,37 +45,8 @@ STUB
   export PATH
 }
 
-_seed_transcript_min_bytes() {
-  # $1 = destination path, $2 = target byte count. Each line is a valid
-  # user-message JSONL entry so vault-distill.sh's jq filter produces non-
-  # empty CONVO output from it.
-  local path="$1" size="$2"
-  mkdir -p "$(dirname "$path")"
-  : > "$path"
-  local msg i=0
-  while [ "$(wc -c < "$path" | tr -d ' ')" -lt "$size" ]; do
-    msg="$(printf '{"type":"user","message":{"content":[{"type":"text","text":"Sample message %d about config parsing with jq and file paths"}]}}' "$i")"
-    printf '%s\n' "$msg" >> "$path"
-    i=$((i + 1))
-  done
-}
-
-_invoke_distill_hook() {
-  # $1 = cwd, $2 = session_id. Uses the pre-seeded DISTILL_TRANSCRIPT.
-  local cwd="$1" sid="$2"
-  local payload
-  payload="$(printf '{"transcript_path":"%s","cwd":"%s","session_id":"%s","reason":"clear"}' \
-    "$DISTILL_TRANSCRIPT" "$cwd" "$sid")"
-  DISTILL_STDERR="$(mktemp "$BATS_TEST_TMPDIR/distill-stderr.XXXXXX")"
-  printf '%s' "$payload" | "$PLUGIN_ROOT/scripts/vault-distill.sh" >/dev/null 2>"$DISTILL_STDERR"
-  DISTILL_RC=$?
-}
-
-_latest_note_under() {
-  # $1 = sessions dir (may include trailing slash)
-  local dir="${1%/}"
-  find "$dir" -type f -name '*.md' 2>/dev/null | sort | tail -n 1
-}
+# _seed_transcript, _distill_invoke, _latest_note_in live in common.sh.
+_latest_note_under() { _latest_note_in "${1%/}"; }
 
 _nth_line() {
   # $1 = file, $2 = line number (1-indexed)
@@ -100,7 +71,7 @@ given_a_prompt_capturing_claude_stub_is_installed_at() {
 given_a_transcript_at_of_size_5000_bytes() {
   DISTILL_TRANSCRIPT="$1"
   DISTILL_SESSION_ID="widgets-session"
-  _seed_transcript_min_bytes "$DISTILL_TRANSCRIPT" 5000
+  _seed_transcript "$DISTILL_TRANSCRIPT" 5000
 }
 
 given_a_readable_template_at_with_content() {
@@ -141,7 +112,7 @@ given_the_config_sets_to_the_bundled_default_template() {
 when_sessionend_fires_with_cwd_session_id() {
   local cwd="$1" sid="$2"
   DISTILL_SESSION_ID="$sid"
-  _invoke_distill_hook "$cwd" "$sid"
+  _distill_invoke "$DISTILL_TRANSCRIPT" "$cwd" "$sid" "clear"
 }
 
 # ------------------------------------------------------------
@@ -166,17 +137,10 @@ then_the_captured_prompt_starts_with_followed_by_today_s_utc_date() {
 
 then_the_captured_prompt_contains() {
   local needle="$1"
-  local today
-  today="$(date -u +%Y-%m-%d)"
-  # Two-arg form used by scenarios that tack on "followed by today's UTC
-  # date" — the second literal is dropped by _normalize_step into the
-  # function name, so only the needle prefix arrives as $1.
   local captured
   captured="$(_captured_prompt_contents)" || return 1
-  # Case 1: <prefix> is followed immediately by today's date.
   case "$captured" in
-    *"${needle}${today}"*) return 0 ;;
-    *"${needle}"*) return 0 ;;
+    *"$needle"*) return 0 ;;
   esac
   printf 'captured prompt did not contain: %s\n' "$needle" >&2
   return 1

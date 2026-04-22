@@ -169,13 +169,44 @@ om_project_allowed() {
   esac
 }
 
-# --- Template resolution, frontmatter split, variable substitution (issue #7) ---
+# --- Template resolution, frontmatter split, variable substitution ---
 
 # om_plugin_root — echoes the absolute path to the plugin root. Derived from
 # this file's location (scripts/_common.sh → plugin-root). Keeps the template
 # path resolution independent of the caller's $0.
 om_plugin_root() {
   ( cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd )
+}
+
+# _om_resolve_to_home <path> — absolute-or-$HOME-relative path resolver.
+# Echoes the input unchanged if it begins with `/`; otherwise prefixes $HOME.
+# Empty input returns empty (caller treats that as "not configured").
+_om_resolve_to_home() {
+  local raw="${1-}"
+  [ -n "$raw" ] || return 0
+  case "$raw" in
+    /*) printf '%s' "$raw" ;;
+    *)  printf '%s/%s' "$HOME" "$raw" ;;
+  esac
+}
+
+# _om_read_distill_template_paths <slug> — prints two newline-separated fields:
+# the per-project override path (or empty) and the global path (or empty).
+# Both are already $HOME-resolved. Silent on any jq / config error.
+_om_read_distill_template_paths() {
+  local slug="${1-}"
+  local override_raw="" global_raw=""
+  if [ -r "$CONFIG" ] && command -v jq >/dev/null 2>&1; then
+    { IFS= read -r override_raw; IFS= read -r global_raw; } < <(
+      jq -r --arg slug "$slug" '
+        (.projects.overrides[$slug].distill.template_path // ""),
+        (.distill.template_path // "")
+      ' "$CONFIG" 2>/dev/null
+    )
+  fi
+  printf '%s\n%s\n' \
+    "$(_om_resolve_to_home "$override_raw")" \
+    "$(_om_resolve_to_home "$global_raw")"
 }
 
 # om_render <text> — substitute the six whitelisted template tokens in <text>.
@@ -293,54 +324,34 @@ om_split_frontmatter() {
 # Returns 0 always — the bundled default is an install-time invariant.
 om_resolve_distill_template() {
   local slug="${1-}"
-  local bundled override_path global_path
-  bundled="$(om_plugin_root)/templates/default-distillation.md"
+  local override_path global_path
+  { IFS= read -r override_path; IFS= read -r global_path; } < <(
+    _om_read_distill_template_paths "$slug"
+  )
 
-  override_path=""
-  global_path=""
-  if [ -r "$CONFIG" ] && command -v jq >/dev/null 2>&1; then
-    { IFS= read -r override_path; IFS= read -r global_path; } < <(
-      jq -r --arg slug "$slug" '
-        (.projects.overrides[$slug].distill.template_path // ""),
-        (.distill.template_path // "")
-      ' "$CONFIG" 2>/dev/null
-    )
-  fi
-
-  _om_resolve_path() {
-    local raw="$1"
-    [ -n "$raw" ] || return 1
-    case "$raw" in
-      /*) printf '%s' "$raw" ;;
-      *)  printf '%s/%s' "$HOME" "$raw" ;;
-    esac
-  }
-
-  local path logged=0
+  local logged=0
   if [ -n "$override_path" ]; then
-    path="$(_om_resolve_path "$override_path")"
-    if [ -r "$path" ] && [ -s "$path" ]; then
-      printf '%s' "$path"
+    if [ -r "$override_path" ] && [ -s "$override_path" ]; then
+      printf '%s' "$override_path"
       return 0
     fi
     printf '[vault-distill.sh] projects.overrides.%s.distill.template_path=%s unreadable; falling back to default template\n' \
-      "$slug" "$path" >&2
+      "$slug" "$override_path" >&2
     logged=1
   fi
 
   if [ -n "$global_path" ]; then
-    path="$(_om_resolve_path "$global_path")"
-    if [ -r "$path" ] && [ -s "$path" ]; then
-      printf '%s' "$path"
+    if [ -r "$global_path" ] && [ -s "$global_path" ]; then
+      printf '%s' "$global_path"
       return 0
     fi
     if [ "$logged" -eq 0 ]; then
       printf '[vault-distill.sh] distill.template_path=%s unreadable; falling back to default template\n' \
-        "$path" >&2
+        "$global_path" >&2
     fi
   fi
 
-  printf '%s' "$bundled"
+  printf '%s/templates/default-distillation.md' "$(om_plugin_root)"
   return 0
 }
 
@@ -355,40 +366,26 @@ om_resolve_distill_template() {
 #   configured but unreadable — falling back to default
 om_describe_distill_template() {
   local slug="${1-}"
-  local override_path="" global_path=""
-  if [ -r "$CONFIG" ] && command -v jq >/dev/null 2>&1; then
-    { IFS= read -r override_path; IFS= read -r global_path; } < <(
-      jq -r --arg slug "$slug" '
-        (.projects.overrides[$slug].distill.template_path // ""),
-        (.distill.template_path // "")
-      ' "$CONFIG" 2>/dev/null
-    )
-  fi
+  local override_path global_path
+  { IFS= read -r override_path; IFS= read -r global_path; } < <(
+    _om_read_distill_template_paths "$slug"
+  )
 
-  local path
   if [ -n "$override_path" ]; then
-    case "$override_path" in
-      /*) path="$override_path" ;;
-      *)  path="$HOME/$override_path" ;;
-    esac
-    if [ -r "$path" ] && [ -s "$path" ]; then
-      printf 'project-override(%s): %s' "$slug" "$path"
-      return 0
+    if [ -r "$override_path" ] && [ -s "$override_path" ]; then
+      printf 'project-override(%s): %s' "$slug" "$override_path"
+    else
+      printf 'configured but unreadable — falling back to default'
     fi
-    printf 'configured but unreadable — falling back to default'
     return 0
   fi
 
   if [ -n "$global_path" ]; then
-    case "$global_path" in
-      /*) path="$global_path" ;;
-      *)  path="$HOME/$global_path" ;;
-    esac
-    if [ -r "$path" ] && [ -s "$path" ]; then
-      printf 'global: %s' "$path"
-      return 0
+    if [ -r "$global_path" ] && [ -s "$global_path" ]; then
+      printf 'global: %s' "$global_path"
+    else
+      printf 'configured but unreadable — falling back to default'
     fi
-    printf 'configured but unreadable — falling back to default'
     return 0
   fi
 

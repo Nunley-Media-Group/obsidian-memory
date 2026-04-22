@@ -90,12 +90,6 @@ CONVO="$(
 
 TEMPLATE_PATH="$(om_resolve_distill_template "$SLUG")"
 TMPL_RAW="$(cat "$TEMPLATE_PATH" 2>/dev/null)"
-if [ -z "$TMPL_RAW" ]; then
-  # Narrow race: the resolved path was readable/non-empty when checked but
-  # gone / truncated by the time we cat'd it. Fall back to the bundled default.
-  TEMPLATE_PATH="$(om_plugin_root)/templates/default-distillation.md"
-  TMPL_RAW="$(cat "$TEMPLATE_PATH" 2>/dev/null)"
-fi
 
 SPLIT="$(om_split_frontmatter "$TMPL_RAW"; printf x)"
 SPLIT="${SPLIT%x}"
