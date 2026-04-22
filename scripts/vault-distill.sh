@@ -54,7 +54,7 @@ SLUG="$(om_slug "$CWD")"
 [ -n "$SLUG" ] || SLUG="unknown"
 
 NOW_STAMP="$(date -u +%Y-%m-%d-%H%M%S)"
-NOW_DATE="$(date -u +%Y-%m-%d)"
+NOW_DATE="${NOW_STAMP%-*}"
 NOW_TIME="${NOW_STAMP##*-}"
 NOW_TIME="${NOW_TIME:0:2}:${NOW_TIME:2:2}:${NOW_TIME:4:2}"
 
@@ -89,7 +89,7 @@ CONVO="$(
 [ -n "$CONVO" ] || exit 0
 
 TEMPLATE_PATH="$(om_resolve_distill_template "$SLUG")"
-TMPL_RAW="$(cat "$TEMPLATE_PATH" 2>/dev/null)"
+TMPL_RAW="$(cat "$TEMPLATE_PATH")"
 
 SPLIT="$(om_split_frontmatter "$TMPL_RAW"; printf x)"
 SPLIT="${SPLIT%x}"

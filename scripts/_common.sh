@@ -337,6 +337,8 @@ om_resolve_distill_template() {
     fi
     printf '[vault-distill.sh] projects.overrides.%s.distill.template_path=%s unreadable; falling back to default template\n' \
       "$slug" "$override_path" >&2
+    # Suppress the global warning when the override already produced a log line
+    # — one warning per invocation is the specified behavior (AC3).
     logged=1
   fi
 
@@ -352,7 +354,6 @@ om_resolve_distill_template() {
   fi
 
   printf '%s/templates/default-distillation.md' "$(om_plugin_root)"
-  return 0
 }
 
 # om_describe_distill_template <slug> — echoes a doctor-oriented descriptor

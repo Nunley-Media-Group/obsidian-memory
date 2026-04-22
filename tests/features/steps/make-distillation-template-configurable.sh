@@ -297,7 +297,7 @@ then_the_latest_session_note_under_starts_with_exactly_5_frontmatter_lines_begin
 then_the_latest_session_note_first_frontmatter_line_is() {
   local expected="$1"
   local f
-  f="$(find "$VAULT/claude-memory/sessions" -type f -name '*.md' 2>/dev/null | sort | tail -n 1)"
+  f="$(_latest_note_under "$VAULT/claude-memory/sessions")"
   [ -n "$f" ] || return 1
   [ "$(head -n 1 "$f")" = "$expected" ]
 }
@@ -305,7 +305,7 @@ then_the_latest_session_note_first_frontmatter_line_is() {
 then_the_latest_session_note_second_frontmatter_line_starts_with() {
   local prefix="$1"
   local f
-  f="$(find "$VAULT/claude-memory/sessions" -type f -name '*.md' 2>/dev/null | sort | tail -n 1)"
+  f="$(_latest_note_under "$VAULT/claude-memory/sessions")"
   [ -n "$f" ] || return 1
   local line
   line="$(_nth_line "$f" 2)"
@@ -321,7 +321,7 @@ then_the_latest_session_note_second_frontmatter_line_starts_with() {
 then_the_latest_session_note_third_frontmatter_line_is() {
   local expected="$1"
   local f
-  f="$(find "$VAULT/claude-memory/sessions" -type f -name '*.md' 2>/dev/null | sort | tail -n 1)"
+  f="$(_latest_note_under "$VAULT/claude-memory/sessions")"
   [ -n "$f" ] || return 1
   [ "$(_nth_line "$f" 3)" = "$expected" ]
 }
@@ -329,7 +329,7 @@ then_the_latest_session_note_third_frontmatter_line_is() {
 then_the_latest_session_note_fourth_frontmatter_line_is() {
   local expected="$1"
   local f
-  f="$(find "$VAULT/claude-memory/sessions" -type f -name '*.md' 2>/dev/null | sort | tail -n 1)"
+  f="$(_latest_note_under "$VAULT/claude-memory/sessions")"
   [ -n "$f" ] || return 1
   [ "$(_nth_line "$f" 4)" = "$expected" ]
 }
@@ -337,7 +337,7 @@ then_the_latest_session_note_fourth_frontmatter_line_is() {
 then_the_latest_session_note_does_not_contain_a_second_frontmatter_block_with() {
   local needle="$1"
   local f
-  f="$(find "$VAULT/claude-memory/sessions" -type f -name '*.md' 2>/dev/null | sort | tail -n 1)"
+  f="$(_latest_note_under "$VAULT/claude-memory/sessions")"
   [ -n "$f" ] || return 1
   if grep -qF -- "$needle" "$f"; then
     printf 'session note unexpectedly contained: %s\n' "$needle" >&2
