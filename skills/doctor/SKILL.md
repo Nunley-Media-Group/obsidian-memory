@@ -50,6 +50,7 @@ The script itself is read-only: no `>`, `>>`, `mv`, `rm`, `ln`, or `mkdir` anywh
 | `projects_symlink` | ok / fail | `run /obsidian-memory:setup <vault>` |
 | `rag_enabled` | ok / fail | `run /obsidian-memory:toggle rag on` |
 | `distill_enabled` | ok / fail | `run /obsidian-memory:toggle distill on` |
+| `scope_mode` | info | (informational; reports `projects.mode` and excluded/allowed counts — adjust with `/obsidian-memory:scope`) |
 | `ripgrep` | info | (optional; vault-rag.sh falls back to POSIX `grep -r`) |
 | `mcp` | info | (optional; Obsidian MCP server registration) |
 

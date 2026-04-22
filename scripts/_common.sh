@@ -58,8 +58,12 @@ _om_slug_in_csv() {
   local IFS_SAVED="$IFS"
   local found=1
   IFS=','
+  # Disable globbing during word-splitting so an unexpected `*`/`?`/`[` in a
+  # future slug charset can never trigger filesystem expansion.
+  set -f
   # shellcheck disable=SC2086
   set -- $stripped
+  set +f
   IFS="$IFS_SAVED"
   local item
   for item in "$@"; do
@@ -105,7 +109,7 @@ _om_read_projects_policy() {
   case "$mode" in
     all|allowlist) ;;
     *)
-      printf '[%s] projects.mode=%q — treating as "all"\n' "$(basename "${0:-om}")" "$mode" >&2
+      printf '[%s] projects.mode="%s" — treating as "all"\n' "$(basename "${0:-om}")" "$mode" >&2
       mode="all"
       ;;
   esac

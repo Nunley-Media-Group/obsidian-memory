@@ -204,17 +204,14 @@ probe_scope_mode() {
     _record "scope_mode" "info" "cannot read — config or jq missing"
     return
   fi
-  local raw mode excluded_n allowed_n
-  raw="$(
-    jq -r '
+  local mode excluded_n allowed_n
+  IFS=$'\t' read -r mode excluded_n allowed_n < <(
+    jq -r '[
       (.projects.mode // "all"),
       ((.projects.excluded // []) | length),
       ((.projects.allowed  // []) | length)
-    ' "$CONFIG" 2>/dev/null
-  )"
-  mode="$(printf '%s' "$raw" | sed -n '1p')"
-  excluded_n="$(printf '%s' "$raw" | sed -n '2p')"
-  allowed_n="$(printf '%s' "$raw" | sed -n '3p')"
+    ] | @tsv' "$CONFIG" 2>/dev/null
+  )
   mode="${mode:-all}"
   if [ "$mode" = "all" ] && [ "${excluded_n:-0}" = "0" ]; then
     _record "scope_mode" "info" "all (unscoped)"

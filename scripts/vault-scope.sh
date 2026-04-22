@@ -103,6 +103,9 @@ list_contains() {
 }
 
 current_slug() {
+  # vault-scope.sh is a user-invoked CLI, so the "current project" is the
+  # operator's shell cwd ($PWD). The hook scripts pull cwd from the JSON
+  # payload instead — never reuse this helper from a hook context.
   om_slug "$PWD"
 }
 
