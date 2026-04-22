@@ -18,6 +18,33 @@ IFS=$'\t' read -r TRANSCRIPT CWD SESSION_ID REASON < <(
 [ -n "$TRANSCRIPT" ] || exit 0
 [ -n "$CWD" ] || CWD="$(pwd)"
 
+# Per-project scope gate (snapshot-first, honors mid-session immunity).
+#
+# The SessionStart hook (vault-session-start.sh) wrote a one-line snapshot for
+# this session_id so a scope edit made mid-session does NOT retroactively kill
+# an in-flight distill. When the snapshot is missing (session predates upgrade
+# or write failed) we fall back to the live config via om_project_allowed —
+# best-effort, still honors "never blocks the user."
+POLICY_DIR="${HOME}/.claude/obsidian-memory/session-policy"
+SNAPSHOT="$POLICY_DIR/${SESSION_ID}.state"
+STATE=""
+if [ -r "$SNAPSHOT" ]; then
+  STATE="$(head -n1 "$SNAPSHOT" 2>/dev/null)"
+  rm -f "$SNAPSHOT" 2>/dev/null
+fi
+
+case "$STATE" in
+  excluded|allowlist-miss)
+    exit 0
+    ;;
+  all|allowlist-hit)
+    :
+    ;;
+  *)
+    om_project_allowed "$CWD" || exit 0
+    ;;
+esac
+
 # Skip trivial sessions.
 SIZE="$(wc -c <"$TRANSCRIPT" 2>/dev/null | tr -d ' ')"
 [ -n "$SIZE" ] || exit 0

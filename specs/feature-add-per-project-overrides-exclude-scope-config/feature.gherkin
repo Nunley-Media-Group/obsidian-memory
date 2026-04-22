@@ -1,0 +1,177 @@
+# File: specs/feature-add-per-project-overrides-exclude-scope-config/feature.gherkin
+#
+# Generated from: specs/feature-add-per-project-overrides-exclude-scope-config/requirements.md
+# Issue: #6
+
+Feature: Per-Project Overrides (Exclude / Scope Config)
+  As a Claude Code + Obsidian user who works on sensitive projects
+  I want to exclude specific projects from RAG and distillation
+  So that client code never ends up in my personal vault while zero-config coverage holds for the rest
+
+  Background:
+    Given obsidian-memory is installed against a scratch vault at "$VAULT"
+    And a healthy config exists at "$HOME/.claude/obsidian-memory/config.json"
+
+  # --- AC1: Exclusion hides the project from both hooks ---
+
+  Scenario: Excluded project is skipped by the RAG hook
+    Given the config has projects.mode = "all" and projects.excluded = ["acme-client"]
+    And the current working directory slug is "acme-client"
+    And the vault contains a note "jq-notes.md" with the text "jq is used for config parsing"
+    When the user submits a prompt containing "jq"
+    Then the UserPromptSubmit hook exits 0
+    And the hook output contains no "<vault-context>" block
+
+  Scenario: Excluded project is skipped by the distill hook
+    Given the config has projects.mode = "all" and projects.excluded = ["acme-client"]
+    And a pre-written session-start snapshot "excluded" exists for session id "sess-ac1-distill"
+    And a transcript of size 5 KB exists at "$HOME/.claude/projects/sess-ac1-distill.jsonl"
+    When the SessionEnd hook runs for session id "sess-ac1-distill" with cwd whose slug is "acme-client"
+    Then the hook exits 0
+    And no file is created under "$VAULT/claude-memory/sessions/acme-client/"
+    And "$VAULT/claude-memory/Index.md" is unchanged
+
+  # --- AC2: Allowlist mode ---
+
+  Scenario: Allowlist mode denies a project not in the allowlist
+    Given the config has projects.mode = "allowlist" and projects.allowed = ["obsidian-memory"]
+    And the current working directory slug is "random-repo"
+    When the user submits any prompt
+    Then the UserPromptSubmit hook exits 0
+    And the hook output contains no "<vault-context>" block
+    And when the SessionEnd hook runs for that cwd its snapshot resolves to "allowlist-miss"
+    And no session file is created under "$VAULT/claude-memory/sessions/random-repo/"
+
+  Scenario: Allowlist mode allows a project in the allowlist
+    Given the config has projects.mode = "allowlist" and projects.allowed = ["obsidian-memory"]
+    And the current working directory slug is "obsidian-memory"
+    And the vault contains a note "architecture.md" with the text "plugin root is the repo root"
+    When the user submits a prompt containing "plugin root"
+    Then the UserPromptSubmit hook emits a "<vault-context>" block
+    And the block contains "architecture.md"
+
+  # --- AC3: Default mode preserves v0.1 behavior ---
+
+  Scenario: Config without a projects stanza behaves as v0.1
+    Given the config contains only vaultPath, rag.enabled = true, and distill.enabled = true
+    And the config has NO projects stanza
+    And the current working directory slug is "any-project"
+    And the vault contains a note "note.md" with the text "hello world"
+    When the user submits a prompt containing "hello"
+    Then the UserPromptSubmit hook emits a "<vault-context>" block
+    And the SessionEnd hook writes a session note for "any-project" when the transcript is large enough
+
+  Scenario: Explicit projects.mode = "all" with empty lists is equivalent to v0.1
+    Given the config has projects.mode = "all", projects.excluded = [], projects.allowed = []
+    And the current working directory slug is "any-project"
+    When the user submits a prompt containing "anything"
+    Then the UserPromptSubmit hook does not short-circuit on the scope check
+    And retrieval runs as it would without the projects stanza
+
+  # --- AC4: Slug derivation is deterministic and length-capped ---
+
+  Scenario: Slug is length-capped at 60 characters
+    Given cwd is "/Users/me/projects/My-Very-Long-Confidential_Client_Project_Name_With_Many_Characters"
+    When om_slug is called with that cwd
+    Then the returned slug matches "^[a-z0-9-]+$"
+    And the slug length is at most 60 characters
+    And the slug has no leading or trailing hyphens
+
+  Scenario: Slug output is stable across calls
+    Given cwd is "/Users/me/projects/Some_Mixed-Case.Project"
+    When om_slug is called twice with that cwd
+    Then both calls produce byte-identical output
+
+  # --- AC5: Scope skill verbs ---
+
+  Scenario Outline: Scope skill verb produces the expected config mutation
+    Given the config has the pre-state <pre_state>
+    When the user runs "<command>"
+    Then the skill exits 0
+    And stdout contains "<expected_stdout>"
+    And the post-state config contains <post_state>
+
+    Examples:
+      | command                                    | pre_state                                           | expected_stdout                                        | post_state                                       |
+      | vault-scope.sh status                      | default                                             | "mode:"                                                | unchanged                                        |
+      | vault-scope.sh current                     | default                                             | "$PWD_SLUG"                                            | unchanged                                        |
+      | vault-scope.sh mode allowlist              | mode=all                                            | "projects.mode: all -> allowlist"                      | projects.mode = "allowlist"                      |
+      | vault-scope.sh mode all                    | mode=allowlist                                      | "projects.mode: allowlist -> all"                      | projects.mode = "all"                            |
+      | vault-scope.sh exclude add acme            | excluded=[]                                         | "projects.excluded: added \"acme\""                    | projects.excluded contains "acme"                |
+      | vault-scope.sh exclude add acme            | excluded=["acme"]                                   | "projects.excluded already contains \"acme\""          | unchanged                                        |
+      | vault-scope.sh exclude remove acme         | excluded=["acme","beta"]                            | "projects.excluded: removed \"acme\""                  | projects.excluded = ["beta"]                     |
+      | vault-scope.sh exclude remove acme         | excluded=["beta"]                                   | "projects.excluded did not contain \"acme\""           | unchanged                                        |
+      | vault-scope.sh exclude list                | excluded=["acme","beta"]                            | "acme\nbeta"                                           | unchanged                                        |
+      | vault-scope.sh allow add obsidian-memory   | allowed=[]                                          | "projects.allowed: added \"obsidian-memory\""          | projects.allowed contains "obsidian-memory"      |
+      | vault-scope.sh allow remove obsidian-memory| allowed=["obsidian-memory"]                         | "projects.allowed: removed \"obsidian-memory\""        | projects.allowed = []                            |
+      | vault-scope.sh allow list                  | allowed=["obsidian-memory","foo"]                   | "obsidian-memory\nfoo"                                 | unchanged                                        |
+
+  Scenario: Scope skill defaults slug to current project when omitted
+    Given the config has projects.excluded = []
+    And the current working directory slug is "my-current-project"
+    When the user runs "vault-scope.sh exclude add" with no slug argument
+    Then projects.excluded contains "my-current-project"
+    And the skill exits 0
+
+  Scenario: Scope skill re-normalizes a typed slug through om_slug
+    Given the config has projects.excluded = []
+    When the user runs "vault-scope.sh exclude add Acme_Client"
+    Then projects.excluded contains "acme-client"
+    And projects.excluded does NOT contain "Acme_Client"
+
+  Scenario: Scope skill emits the mid-session caveat when the current project's bucket changes
+    Given the current working directory slug is "live-project"
+    And projects.excluded = []
+    When the user runs "vault-scope.sh exclude add live-project"
+    Then stdout contains the line "Note: overrides apply to sessions that start AFTER this change; the current session is unaffected."
+
+  # --- AC6: Mid-session immunity ---
+
+  Scenario: Mid-session exclude does not retroactively kill the in-flight distill
+    Given a session "sess-mid" started with projects.excluded = [] and the snapshot recorded "all" for slug "mid-project"
+    And mid-session the user ran "vault-scope.sh exclude add mid-project" and the live config now contains "mid-project" in excluded
+    When the SessionEnd hook runs for session id "sess-mid" with cwd whose slug is "mid-project"
+    Then the hook proceeds to write a session note under "$VAULT/claude-memory/sessions/mid-project/"
+    And the snapshot file "$HOME/.claude/obsidian-memory/session-policy/sess-mid.state" is removed after SessionEnd
+
+  Scenario: Subsequent session honors the mid-session edit
+    Given projects.excluded now contains "mid-project"
+    And a new session "sess-next" starts in cwd whose slug is "mid-project"
+    Then the SessionStart hook writes a snapshot "excluded" for session id "sess-next"
+    And when SessionEnd runs, no session note is written
+
+  # --- AC7: Malformed / missing projects stanza falls back to "all" ---
+
+  Scenario: Unknown mode value is coerced to "all" with a stderr warning
+    Given the config has projects.mode = "strict-ish"
+    When the user submits a prompt
+    Then the UserPromptSubmit hook exits 0
+    And stderr contains "projects.mode=\"strict-ish\" — treating as \"all\""
+    And retrieval runs as if mode were "all"
+
+  Scenario: Non-array excluded field is tolerated
+    Given the config has projects.excluded = "not an array"
+    When the user submits a prompt
+    Then the UserPromptSubmit hook exits 0
+    And stderr contains a malformed-projects warning
+    And retrieval runs as if excluded were []
+
+  # --- AC8: Doctor reports scope_mode ---
+
+  Scenario: Doctor reports default scope mode as unscoped
+    Given the config has the default projects stanza (mode=all, excluded=[], allowed=[])
+    When the user runs "/obsidian-memory:doctor"
+    Then stdout contains a line whose key is "scope_mode" with status "INFO"
+    And the detail reads "all (unscoped)"
+
+  Scenario: Doctor reports allowlist mode with counts
+    Given the config has projects.mode = "allowlist", projects.excluded = ["a"], projects.allowed = ["b","c"]
+    When the user runs "/obsidian-memory:doctor"
+    Then the detail for "scope_mode" reads "allowlist (excluded: 1, allowed: 2)"
+
+  Scenario: Doctor --json emits a scope_mode key
+    Given the config has projects.mode = "allowlist", projects.allowed = ["b"]
+    When the user runs "/obsidian-memory:doctor --json"
+    Then the output is valid JSON
+    And the JSON contains a "scope_mode" entry with status "info"
+    And the note field equals "allowlist (excluded: 0, allowed: 1)"

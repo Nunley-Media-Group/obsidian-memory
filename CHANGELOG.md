@@ -4,6 +4,12 @@ All notable changes to plugins in this marketplace are documented here. Format f
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-04-22
+
+### Added
+
+- Per-project override config (`projects.mode`, `projects.excluded`, `projects.allowed`) — exclude specific projects from RAG and distillation without disabling the plugin globally. Adds `/obsidian-memory:scope` skill and `vault-scope.sh` for list/add/remove operations. Closes #6.
+
 ## [0.4.0] - 2026-04-21
 
 ### Added

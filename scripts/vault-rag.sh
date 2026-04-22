@@ -21,6 +21,13 @@ log_err() { printf '[%s] %s\n' "$(basename "$0")" "$*" >&2; }
 
 PAYLOAD="$(om_read_payload)" || exit 0
 
+# Resolve cwd from the payload (fallback: $PWD) so the per-project scope
+# policy runs against a stable project identity before any work happens.
+CWD_FROM_PAYLOAD="$(printf '%s' "$PAYLOAD" | jq -r '.cwd // ""' 2>/dev/null)"
+CWD="${CWD_FROM_PAYLOAD:-$PWD}"
+
+om_project_allowed "$CWD" || exit 0
+
 PAYLOAD_TMP="$(mktemp "${TMPDIR:-/tmp}/vault-rag-payload.XXXXXX")"
 trap 'rm -f "$PAYLOAD_TMP" 2>/dev/null; exit 0' EXIT
 printf '%s' "$PAYLOAD" > "$PAYLOAD_TMP"
