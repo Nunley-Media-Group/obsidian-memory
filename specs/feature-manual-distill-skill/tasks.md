@@ -15,7 +15,7 @@
 | Backend | 0 | N/A (delegates to hook) |
 | Frontend | 0 | N/A |
 | Integration | 3 | [x] |
-| Testing | 3 | [ ] (deferred to #1 bats-core harness) |
+| Testing | 3 | [x] |
 | **Total** | **7** | |
 
 Retroactive task breakdown. Implementation artefact lives in `skills/distill-session/SKILL.md`.
@@ -74,8 +74,6 @@ Retroactive task breakdown. Implementation artefact lives in `skills/distill-ses
 
 ## Phase 5: BDD Testing (Required)
 
-> Deferred until #1 lands the bats-core harness.
-
 ### T005: BDD feature file
 
 **File(s)**: `specs/feature-manual-distill-skill/feature.gherkin`
@@ -88,15 +86,15 @@ Retroactive task breakdown. Implementation artefact lives in `skills/distill-ses
 
 ### T006: Parity integration tests
 
-**File(s)**: `tests/integration/distill-session-skill.bats`, `tests/features/steps/distill-session.sh`
+**File(s)**: `tests/integration/distill-session-skill.bats`, `tests/features/steps/manual-distill.sh`
 **Type**: Create
 **Depends**: T005, issue #1
 **Acceptance**:
-- [ ] Happy-path test seeds a scratch transcript, invokes the skill, asserts hook output artefact (AC1)
-- [ ] Failure-mode tests cover AC2 (no transcripts) and AC3 (missing deps)
-- [ ] Idempotency test invokes skill twice and asserts two distinct timestamped files (AC4)
-- [ ] Parity test: run skill vs. directly invoke `vault-distill.sh` with equivalent payload; diff resulting artefacts; must match except `end_reason` ("manual" vs. provided reason) — success-metric verification
-- [ ] Passes `bats tests/integration` and `tests/run-bdd.sh`
+- [x] Happy-path test seeds a scratch transcript, invokes the skill, asserts hook output artefact (AC1)
+- [x] Failure-mode tests cover AC2 (no transcripts) and AC3 (missing deps)
+- [x] Idempotency test invokes skill twice and asserts two distinct timestamped files (AC4)
+- [x] Parity test: run skill vs. directly invoke `vault-distill.sh` with equivalent payload; diff resulting artefacts; must match except `end_reason` ("manual" vs. provided reason) — success-metric verification
+- [x] Passes `bats tests/integration` and `tests/run-bdd.sh`
 
 ### T007: Fallback-stub reporting test
 
@@ -104,8 +102,8 @@ Retroactive task breakdown. Implementation artefact lives in `skills/distill-ses
 **Type**: Create
 **Depends**: T006, issue #1
 **Acceptance**:
-- [ ] Stub `claude` binary configured to return empty
-- [ ] Invoke skill; assert report contains "fallback stub" marker (AC7)
+- [x] Stub `claude` binary configured to return empty
+- [x] Invoke skill; assert report contains "fallback stub" marker (AC7)
 
 ---
 
@@ -130,6 +128,7 @@ T007 ─── depends on T006 and #1
 | Issue | Date | Summary |
 |-------|------|---------|
 | #12 | 2026-04-19 | Initial baseline task breakdown — documents v0.1.0 shipped implementation; testing phase deferred to #1 |
+| #12 | 2026-04-22 | Testing phase completed — `tests/integration/distill-session-skill.bats` (AC1–AC7 + parity) lands now that #1 shipped |
 
 ---
 
