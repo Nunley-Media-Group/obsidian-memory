@@ -56,15 +56,31 @@ _run_distill_session_skill_impl() {
     --arg r "manual" \
     '{transcript_path:$t, cwd:$c, session_id:$s, reason:$r}' 2>/dev/null)"
 
+  # Snapshot the note count before invoking so we can detect a NEW note.
+  local before_count
+  before_count="$(find "$VAULT/claude-memory/sessions" -type f -name '*.md' 2>/dev/null | wc -l | tr -d ' ')"
+
   printf '%s' "$MANUAL_SKILL_PAYLOAD" \
     | "$PLUGIN_ROOT/scripts/vault-distill.sh" >/dev/null 2>&1
   MANUAL_SKILL_RC=$?
 
-  local latest
-  latest="$(find "$VAULT/claude-memory/sessions" -type f -name '*.md' -print0 2>/dev/null \
-             | xargs -0 ls -1t 2>/dev/null \
-             | head -n 1)"
-  MANUAL_SKILL_NOTE="$latest"
+  # vault-distill.sh now returns immediately (async worker); poll for the note.
+  # Wait until the note count exceeds before_count (a NEW note appeared).
+  # Mirror the skill's documented wait-up-to-60s behaviour (SKILL.md step 4).
+  local latest waited=0
+  while [ "$waited" -lt 60 ]; do
+    local after_count
+    after_count="$(find "$VAULT/claude-memory/sessions" -type f -name '*.md' 2>/dev/null | wc -l | tr -d ' ')"
+    if [ "$after_count" -gt "$before_count" ]; then
+      latest="$(find "$VAULT/claude-memory/sessions" -type f -name '*.md' -print0 2>/dev/null \
+                 | xargs -0 ls -1t 2>/dev/null \
+                 | head -n 1)"
+      break
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+  MANUAL_SKILL_NOTE="${latest:-}"
   MANUAL_SKILL_OUTPUT="note: ${MANUAL_SKILL_NOTE:-<none>}"
 }
 

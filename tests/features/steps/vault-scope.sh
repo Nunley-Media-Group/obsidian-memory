@@ -485,9 +485,15 @@ then_the_sessionend_hook_writes_a_session_note_for_when_the_transcript_is_large_
   given_a_transcript_of_size_5_kb_exists_at "$transcript"
   _vs_run_distill "$sid" "$transcript"
   [ "$VS_HOOK_RC" -eq 0 ]
-  local count
-  count="$(find "$VAULT/claude-memory/sessions/$slug" -maxdepth 1 -type f -name '*.md' 2>/dev/null | wc -l | tr -d ' ')"
-  [ "${count:-0}" -ge 1 ]
+  # Poll for up to 20 seconds — vault-distill.sh is now async.
+  local count waited=0
+  while [ "$waited" -lt 20 ]; do
+    count="$(find "$VAULT/claude-memory/sessions/$slug" -maxdepth 1 -type f -name '*.md' 2>/dev/null | wc -l | tr -d ' ')"
+    [ "${count:-0}" -ge 1 ] && return 0
+    sleep 1
+    waited=$((waited + 1))
+  done
+  return 1
 }
 
 then_the_userpromptsubmit_hook_does_not_short_circuit_on_the_scope_check() {
@@ -506,9 +512,15 @@ then_the_hook_proceeds_to_write_a_session_note_under() {
   local dir="${1:-}"
   [ -n "$dir" ] || return 1
   [ "$VS_HOOK_RC" -eq 0 ]
-  local count
-  count="$(find "$dir" -maxdepth 1 -type f -name '*.md' 2>/dev/null | wc -l | tr -d ' ')"
-  [ "${count:-0}" -ge 1 ]
+  # Poll for up to 20 seconds — vault-distill.sh is now async.
+  local count waited=0
+  while [ "$waited" -lt 20 ]; do
+    count="$(find "$dir" -maxdepth 1 -type f -name '*.md' 2>/dev/null | wc -l | tr -d ' ')"
+    [ "${count:-0}" -ge 1 ] && return 0
+    sleep 1
+    waited=$((waited + 1))
+  done
+  return 1
 }
 
 then_the_snapshot_file_is_removed_after_sessionend() {

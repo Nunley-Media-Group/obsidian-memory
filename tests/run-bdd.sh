@@ -317,14 +317,15 @@ main() {
     local glob
     shopt -s nullglob
     for glob in "$REPO_ROOT"/specs/*/feature.gherkin; do
-      # Skip the harness's own feature when already running inside a BDD run
-      # to break would-be recursion (Scenario: "BDD runner executes a feature
-      # and passes …" invokes tests/run-bdd.sh which would otherwise re-enter
-      # this same feature and loop).
-      if [ "${OBM_IN_BDD_RUN:-0}" = 1 ] \
-         && case "$glob" in *feature-set-up-bats-core-cucumber-shell-test-harness*) true ;; *) false ;; esac; then
-        continue
-      fi
+      # Skip the harness's own feature on the default-glob path. Its scenarios
+      # re-run the gate commands (bats integration, the BDD runner, the
+      # linter, jq) that /verify-code already runs as direct gates — every
+      # top-level BDD invocation would otherwise double the wall time of every
+      # gate, and nested run-bdd.sh calls recurse through it. The
+      # harness's BDD-runner self-tests live in tests/integration/run_bdd.bats
+      # and tests/integration/gate_sweep.bats. To explicitly exercise the
+      # harness feature, invoke tests/run-bdd.sh with its path as an argument.
+      case "$glob" in *feature-set-up-bats-core-cucumber-shell-test-harness*) continue ;; esac
       features+=("$glob")
     done
     shopt -u nullglob

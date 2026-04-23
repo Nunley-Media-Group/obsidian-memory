@@ -190,12 +190,27 @@ _note_frontmatter() {
   # reason="clear" (the auto-fired SessionEnd shape).
   local session_id
   session_id="$(basename "$transcript" .jsonl)"
+
+  # Snapshot note count before invoking so we can detect the new async note.
+  local before_hook_count
+  before_hook_count="$(find "$SESSIONS" -type f -name '*.md' 2>/dev/null | wc -l | tr -d ' ')"
+
   _distill_invoke "$transcript" "/tmp/my-proj" "$session_id" "clear"
   [ "$DISTILL_RC" = 0 ]
 
-  local via_hook
-  via_hook="$(find "$SESSIONS/my-proj" -type f -name '*.md' -print0 \
-              | xargs -0 ls -1t | head -n 1)"
+  # vault-distill.sh is async; poll until a new note appears (up to 30 s).
+  local via_hook="" via_hook_waited=0
+  while [ "$via_hook_waited" -lt 30 ]; do
+    local after_hook_count
+    after_hook_count="$(find "$SESSIONS" -type f -name '*.md' 2>/dev/null | wc -l | tr -d ' ')"
+    if [ "$after_hook_count" -gt "$before_hook_count" ]; then
+      via_hook="$(find "$SESSIONS/my-proj" -type f -name '*.md' -print0 \
+                  | xargs -0 ls -1t | head -n 1)"
+      break
+    fi
+    sleep 1
+    via_hook_waited=$((via_hook_waited + 1))
+  done
   [ -n "$via_hook" ] && [ -f "$via_hook" ]
   [ "$via_hook" != "$via_skill" ]
 

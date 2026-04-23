@@ -115,7 +115,19 @@ _distill_invoke() {
 }
 
 _latest_note_in() {
-  find "$1" -type f -name '*.md' 2>/dev/null | sort | tail -n 1
+  # Poll for up to 20 seconds to account for the async distill worker.
+  # vault-distill.sh now returns immediately (sync head) and the note is
+  # written by a detached background process. All BDD/bats tests use a
+  # fast fake-claude stub, so the worker completes in well under a second;
+  # the 20-second bound is pure headroom for slow CI environments.
+  local dir="$1" waited=0 f
+  while [ "$waited" -lt 20 ]; do
+    f="$(find "$dir" -type f -name '*.md' 2>/dev/null | sort | tail -n 1)"
+    [ -n "$f" ] && { printf '%s' "$f"; return 0; }
+    sleep 1
+    waited=$((waited + 1))
+  done
+  return 1
 }
 
 # Given a scratch HOME at "$BATS_TEST_TMPDIR/home"

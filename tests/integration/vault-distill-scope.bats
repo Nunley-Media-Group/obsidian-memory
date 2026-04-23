@@ -96,8 +96,14 @@ _run_distill() {
   mkdir -p "$BATS_TEST_TMPDIR/proj/mid-project"
   run _run_distill "sess-C" "$BATS_TEST_TMPDIR/proj/mid-project"
   [ "$status" -eq 0 ]
-  local notes
-  notes="$(find "$VAULT/claude-memory/sessions/mid-project" -type f -name '*.md' 2>/dev/null | wc -l | tr -d ' ')"
+  # vault-distill.sh is async; poll up to 20 s for the note.
+  local notes waited=0
+  while [ "$waited" -lt 20 ]; do
+    notes="$(find "$VAULT/claude-memory/sessions/mid-project" -type f -name '*.md' 2>/dev/null | wc -l | tr -d ' ')"
+    [ "$notes" -ge 1 ] && break
+    sleep 1
+    waited=$((waited + 1))
+  done
   [ "$notes" -ge 1 ]
   # Snapshot consumed after read.
   [ ! -e "$POLICY_DIR/sess-C.state" ]
@@ -109,8 +115,14 @@ _run_distill() {
   mkdir -p "$BATS_TEST_TMPDIR/proj/work-project"
   run _run_distill "sess-D" "$BATS_TEST_TMPDIR/proj/work-project"
   [ "$status" -eq 0 ]
-  local notes
-  notes="$(find "$VAULT/claude-memory/sessions/work-project" -type f -name '*.md' 2>/dev/null | wc -l | tr -d ' ')"
+  # vault-distill.sh is async; poll up to 20 s for the note.
+  local notes waited=0
+  while [ "$waited" -lt 20 ]; do
+    notes="$(find "$VAULT/claude-memory/sessions/work-project" -type f -name '*.md' 2>/dev/null | wc -l | tr -d ' ')"
+    [ "$notes" -ge 1 ] && break
+    sleep 1
+    waited=$((waited + 1))
+  done
   [ "$notes" -ge 1 ]
 }
 
@@ -132,7 +144,13 @@ _run_distill() {
   mkdir -p "$BATS_TEST_TMPDIR/proj/free-project"
   run _run_distill "sess-free" "$BATS_TEST_TMPDIR/proj/free-project"
   [ "$status" -eq 0 ]
-  local notes
-  notes="$(find "$VAULT/claude-memory/sessions/free-project" -type f -name '*.md' 2>/dev/null | wc -l | tr -d ' ')"
+  # vault-distill.sh is async; poll up to 20 s for the note.
+  local notes waited=0
+  while [ "$waited" -lt 20 ]; do
+    notes="$(find "$VAULT/claude-memory/sessions/free-project" -type f -name '*.md' 2>/dev/null | wc -l | tr -d ' ')"
+    [ "$notes" -ge 1 ] && break
+    sleep 1
+    waited=$((waited + 1))
+  done
   [ "$notes" -ge 1 ]
 }
