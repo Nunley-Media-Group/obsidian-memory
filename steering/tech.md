@@ -58,11 +58,12 @@ None. obsidian-memory is local-first. The only external binary invoked is the al
 
 ## Versioning
 
-The `.claude-plugin/plugin.json` `version` field is the **single source of truth** for the plugin's current version. A root-level `VERSION` file is not used; the plugin manifest is authoritative so the Claude Code marketplace reads the same value users install against.
+The root-level `VERSION` file is the enforcement trigger that `nmg-sdlc`'s `/open-pr` skill reads to classify and apply version bumps. The `.claude-plugin/plugin.json` `version` field is dual-updated from the same source so the Claude Code marketplace reads the same value users install against. Both files must always agree.
 
 | File | Path | Notes |
 |------|------|-------|
-| .claude-plugin/plugin.json | `version` | Plugin manifest; authoritative. Read by Claude Code at install and by every marketplace that references this repo. |
+| VERSION | entire file | Plain-text single-source-of-truth read by `/open-pr`. Without this file, `/open-pr` silently skips Steps 2 and 3 and no bump is applied. |
+| .claude-plugin/plugin.json | `version` | Plugin manifest. Read by Claude Code at install and by every marketplace that references this repo. Dual-updated with `VERSION`. |
 | CHANGELOG.md | `line:N` for `## [X.Y.Z]` heading | Conventional Changelog; the heading line changes per release. |
 
 ### Path Syntax

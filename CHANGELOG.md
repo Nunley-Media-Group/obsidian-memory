@@ -4,6 +4,16 @@ All notable changes to plugins in this marketplace are documented here. Format f
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-04-23
+
+### Fixed
+
+- `vault-distill.sh` now detaches the slow `claude -p` call, note assembly, and `Index.md` update into a background worker launched via `setsid -f` / `nohup` / `disown` fallback chain. The synchronous head returns `exit 0` before Claude Code's SessionEnd grace period elapses, so `/clear` distillation completes asynchronously instead of being killed mid-call. Closes #25.
+
+### Added
+
+- Root-level `VERSION` file and updated `steering/tech.md` `## Versioning` so `nmg-sdlc`'s `/open-pr` skill enforces version bumps on every future PR. Prior releases skipped the bump gate silently because no `VERSION` file existed.
+
 ## [0.5.0] - 2026-04-22
 
 ### Added
