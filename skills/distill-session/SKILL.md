@@ -52,31 +52,58 @@ jq -n \
   | "$HOOK"
 ```
 
-The hook itself handles config loading, size thresholds, `claude -p` invocation, note assembly, and Index.md linking.
+The hook returns immediately (the slow `claude -p` call runs in a detached background worker). Proceed to step 4 to wait for the worker to finish.
 
-### 4. Locate and report the output
+### 4. Wait for the worker to write the note
 
-Find the newest note the hook just wrote — the hook owns slug derivation, so rely on modification time rather than re-deriving the project slug here.
+After `vault-distill.sh` returns, the distillation worker is running asynchronously. Poll the sessions directory for up to 60 seconds waiting for the note to appear:
 
 ```bash
 VAULT="$(jq -r '.vaultPath' "$HOME/.claude/obsidian-memory/config.json")"
-LATEST="$(find "$VAULT/claude-memory/sessions" -type f -name '*.md' -print0 2>/dev/null \
-  | xargs -0 ls -1t 2>/dev/null \
-  | head -n 1)"
+DEBUG_LOG="$HOME/.claude/obsidian-memory/distill-debug.log"
+
+LATEST=""
+WAITED=0
+while [ "$WAITED" -lt 60 ]; do
+  LATEST="$(find "$VAULT/claude-memory/sessions" -type f -name '*.md' -print0 2>/dev/null \
+    | xargs -0 ls -1t 2>/dev/null \
+    | head -n 1)"
+  [ -n "$LATEST" ] && break
+  sleep 1
+  WAITED=$((WAITED + 1))
+done
 ```
 
-Print `$LATEST` and, if desired, the first ~40 lines of it for confirmation.
+If `$LATEST` is still empty after 60 seconds, the worker is still running in the background. Report:
+
+> Distillation is still running in the background. Check `~/.claude/obsidian-memory/distill-debug.log` for progress. The note will appear in `$VAULT/claude-memory/sessions/` when complete.
+
+Do **not** report "Distillation returned no content" in the timeout case — that message is reserved for when `claude -p` itself returns an empty body.
+
+If the debug log exists, tail the last 10 lines for the user to see worker progress:
+
+```bash
+[ -f "$DEBUG_LOG" ] && tail -n 10 "$DEBUG_LOG"
+```
 
 ### 5. Report
 
-Print:
+When `$LATEST` is found, print:
 
 - Transcript used
-- Output note path
-- Whether the note was a real distillation or the fallback stub (check for the "Distillation returned no content" marker)
+- Output note path (`$LATEST`)
+- Whether the note was a real distillation or the fallback stub (check for the "Distillation returned no content" marker in the note body)
+- First ~40 lines of the note for confirmation
+
+```bash
+echo "Transcript: $TRANSCRIPT"
+echo "Note written: $LATEST"
+head -n 40 "$LATEST"
+```
 
 ## Notes
 
-- Transcripts smaller than ~2 KB are skipped by the hook (trivial sessions).
+- Transcripts smaller than ~2 KB are skipped by the hook (trivial sessions). In that case the sessions directory stays empty and the poll exits with a timeout — report "session too small to distill (< 2 KB)" rather than the generic timeout message.
 - Re-running this skill always produces a new timestamped note — it never overwrites.
 - The hook runs `CLAUDECODE="" claude -p` to avoid the "Cannot be launched inside another Claude Code session" guard; no action required from you.
+- The detached worker self-cleans its temp file after completion.

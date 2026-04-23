@@ -3,10 +3,31 @@
 # Reads the just-ended session's transcript, calls `claude -p` to produce a
 # concise Obsidian note, and writes it under
 # <vault>/claude-memory/sessions/<project-slug>/YYYY-MM-DD-HHMMSS.md.
+#
+# Architecture (post-fix #25):
+#   Sync head  (everything before the worker launch): fast path — parse, scope
+#              gate, size floor, slug, prompt render. Returns exit 0 quickly so
+#              /clear's SessionEnd grace period is never exceeded.
+#   Worker     (written to a temp file and launched detached): claude -p
+#              invocation, note assembly, file write, Index.md update. Launched
+#              detached via setsid/nohup/disown so it survives hook teardown.
 
 # shellcheck source=scripts/_common.sh
 . "$(dirname "$0")/_common.sh"
 om_load_config distill
+
+# Re-entrancy guard: if this invocation is itself running inside a recursive
+# claude -p SessionEnd (i.e., we are the worker's own nested hook), bail out
+# immediately. Two checks:
+#   1. OM_DISTILL_WORKER_ACTIVE=1 — set in the worker's env before spawning
+#      the nested claude -p, so any SessionEnd re-entry from that subprocess
+#      sees this marker and short-circuits.
+#   2. CLAUDECODE unset/empty — the worker clears it before calling claude -p.
+#      When CLAUDECODE is non-empty we are the outer (real) hook invocation; when
+#      it is empty AND OM_DISTILL_WORKER_ACTIVE is set we know we are the inner.
+if [ "${OM_DISTILL_WORKER_ACTIVE:-}" = "1" ] && [ -z "${CLAUDECODE:-}" ]; then
+  exit 0
+fi
 
 PAYLOAD="$(om_read_payload)" || exit 0
 
@@ -99,50 +120,121 @@ BODY_RAW="${SPLIT#*$'\x1e'}"
 FM_OUT="$(om_render "$FM_RAW")"
 PROMPT="$(om_render "$BODY_RAW")"
 
-# CLAUDECODE="" avoids the "Cannot be launched inside another Claude Code session" guard.
-NOTE_BODY="$(CLAUDECODE="" claude -p "$PROMPT" 2>/dev/null)"
+# ---------------------------------------------------------------------------
+# Sync-head debug helper.
+# ---------------------------------------------------------------------------
+
+DEBUG_LOG="${HOME}/.claude/obsidian-memory/distill-debug.log"
+
+_log_debug() {
+  local dir
+  dir="$(dirname "$DEBUG_LOG")"
+  [ -d "$dir" ] || return 0
+  printf '[%s] %s\n' "$(date -u +%H:%M:%SZ 2>/dev/null || date +%H:%M:%S)" "$*" \
+    >> "$DEBUG_LOG" 2>/dev/null || true
+}
+
+# ---------------------------------------------------------------------------
+# Worker script: write to a temp file then launch detached.
+# All slow work lives here: claude -p, note assembly, file write, Index.md.
+# Receives context exclusively via environment variables exported below.
+# ---------------------------------------------------------------------------
+
+# Export every variable the worker needs.
+export VAULT SLUG NOW_STAMP NOW_DATE NOW_TIME OUT_DIR OUT_FILE
+export TRANSCRIPT SESSION_ID CWD REASON
+export CONVO FM_OUT PROMPT
+export DEBUG_LOG
+
+# Write the worker to a temp file — avoids bash 3.2 heredoc-in-$() issues.
+# Pass the path via env so the worker can self-clean after completion.
+OM_WORKER_FILE="$(mktemp "${TMPDIR:-/tmp}/om-worker.XXXXXX.sh")" || exit 0
+export OM_WORKER_FILE
 
 {
-  if [ -n "$FM_OUT" ]; then
-    # Strip trailing newlines so the emitted "\n\n" produces exactly one blank
-    # line between the frontmatter and the body (AC5).
+  printf '%s\n' '#!/usr/bin/env bash'
+  printf '%s\n' 'set -u'
+  printf '%s\n' "trap 'exit 0' ERR"
+} > "$OM_WORKER_FILE"
+cat >> "$OM_WORKER_FILE" << 'WORKER_BODY'
+
+_wlog() {
+  local dir
+  dir="$(dirname "$DEBUG_LOG")"
+  [ -d "$dir" ] || return 0
+  printf '[%s] %s\n' "$(date -u +%H:%M:%SZ 2>/dev/null || date +%H:%M:%S)" "$*" \
+    >> "$DEBUG_LOG" 2>/dev/null || true
+}
+
+worker_pid="$$"
+
+# Re-entrancy guard: if the nested claude -p fires its own SessionEnd and
+# re-enters vault-distill.sh, that outer re-entry short-circuits before reaching
+# here. This inner guard is an extra belt-and-suspenders check in case
+# OM_DISTILL_WORKER_ACTIVE somehow leaked without CLAUDECODE being cleared.
+if [ "${OM_DISTILL_WORKER_ACTIVE:-}" = "1" ] && [ -z "${CLAUDECODE:-}" ]; then
+  _wlog "[worker pid=${worker_pid}] re-entrancy guard triggered; exiting"
+  exit 0
+fi
+
+_wlog "[worker pid=${worker_pid}] start: OUT_FILE=${OUT_FILE:-<unset>}"
+
+# CLAUDECODE="" avoids the "Cannot be launched inside another Claude Code
+# session" guard. OM_DISTILL_WORKER_ACTIVE=1 lets any recursive re-entry
+# (via the nested claude -p's own SessionEnd hook) short-circuit.
+NOTE_BODY="$(OM_DISTILL_WORKER_ACTIVE=1 CLAUDECODE="" claude -p "${PROMPT}" 2>/dev/null)"
+claude_rc=$?
+_wlog "[worker pid=${worker_pid}] claude -p exit=${claude_rc}"
+
+{
+  if [ -n "${FM_OUT:-}" ]; then
     while [ "${FM_OUT: -1}" = $'\n' ]; do
       FM_OUT="${FM_OUT%$'\n'}"
     done
-    printf '%s\n\n' "$FM_OUT"
+    printf '%s\n\n' "${FM_OUT}"
   else
     printf -- '---\n'
-    printf 'date: %s\n' "$NOW_DATE"
-    printf 'time: %s\n' "$NOW_TIME"
-    printf 'session_id: %s\n' "$SESSION_ID"
-    printf 'project: %s\n' "$SLUG"
-    printf 'cwd: %s\n' "$CWD"
-    printf 'end_reason: %s\n' "$REASON"
+    printf 'date: %s\n' "${NOW_DATE}"
+    printf 'time: %s\n' "${NOW_TIME}"
+    printf 'session_id: %s\n' "${SESSION_ID}"
+    printf 'project: %s\n' "${SLUG}"
+    printf 'cwd: %s\n' "${CWD}"
+    printf 'end_reason: %s\n' "${REASON}"
     printf 'source: claude-code\n'
     printf -- '---\n\n'
   fi
-  if [ -n "$NOTE_BODY" ]; then
-    printf '%s\n' "$NOTE_BODY"
+  if [ -n "${NOTE_BODY}" ]; then
+    printf '%s\n' "${NOTE_BODY}"
   else
-    # shellcheck disable=SC2016
-    printf '## Summary\n\nDistillation returned no content. See transcript: `%s`\n' "$TRANSCRIPT"
+    printf '## Summary\n\nDistillation returned no content. See transcript: `%s`\n' "${TRANSCRIPT}"
   fi
-} > "$OUT_FILE" 2>/dev/null || exit 0
+} > "${OUT_FILE}" 2>/dev/null
 
-INDEX="$VAULT/claude-memory/Index.md"
-REL_NOTE="sessions/$SLUG/${NOW_STAMP}.md"
+if [ -f "${OUT_FILE}" ]; then
+  nbytes="$(wc -c < "${OUT_FILE}" 2>/dev/null | tr -d ' ')"
+  _wlog "[worker pid=${worker_pid}] wrote ${OUT_FILE} (${nbytes} bytes)"
+else
+  _wlog "[worker pid=${worker_pid}] write to ${OUT_FILE} failed"
+  exit 0
+fi
+
+INDEX="${VAULT}/claude-memory/Index.md"
+REL_NOTE="sessions/${SLUG}/${NOW_STAMP}.md"
 LINK_LINE="- [[${REL_NOTE}]] — ${SLUG} (${NOW_DATE} ${NOW_TIME} UTC)"
 
-if [ ! -f "$INDEX" ]; then
+if [ ! -f "${INDEX}" ]; then
   {
     printf '# Claude Memory Index\n\n'
     printf 'Auto-generated session notes from the obsidian-memory plugin.\n\n'
     printf '## Sessions\n\n'
-    printf '%s\n' "$LINK_LINE"
-  } > "$INDEX" 2>/dev/null || exit 0
+    printf '%s\n' "${LINK_LINE}"
+  } > "${INDEX}" 2>/dev/null || {
+    _wlog "[worker pid=${worker_pid}] index create failed"
+    exit 0
+  }
 else
   TMP="$(mktemp "${TMPDIR:-/tmp}/vault-index.XXXXXX")"
-  if awk -v line="$LINK_LINE" '
+  if awk -v line="${LINK_LINE}" '
     { print }
     !inserted && /^## Sessions[[:space:]]*$/ {
       print ""
@@ -157,11 +249,42 @@ else
         print line
       }
     }
-  ' "$INDEX" > "$TMP" 2>/dev/null; then
-    mv "$TMP" "$INDEX" 2>/dev/null || rm -f "$TMP"
+  ' "${INDEX}" > "${TMP}" 2>/dev/null; then
+    mv "${TMP}" "${INDEX}" 2>/dev/null || rm -f "${TMP}"
   else
-    rm -f "$TMP"
+    rm -f "${TMP}"
+    _wlog "[worker pid=${worker_pid}] index update failed"
+    exit 0
   fi
 fi
 
+_wlog "[worker pid=${worker_pid}] index updated; done"
+# Remove the worker temp file after completion.
+rm -f "${OM_WORKER_FILE:-}" 2>/dev/null || true
+exit 0
+WORKER_BODY
+
+# ---------------------------------------------------------------------------
+# Sync head: launch the worker detached, log one confirmation line, exit 0.
+# Prefer setsid -f (new session, survives SIGHUP), fall back to nohup ... &,
+# then bare ( ... ) & disown.
+# ---------------------------------------------------------------------------
+
+if command -v setsid >/dev/null 2>&1; then
+  # setsid -f: fork + new session; the parent returns immediately.
+  # If -f is unsupported (older setsid), fall back to backgrounded setsid + disown.
+  setsid -f bash "$OM_WORKER_FILE" </dev/null >/dev/null 2>/dev/null \
+    || {
+      setsid bash "$OM_WORKER_FILE" </dev/null >/dev/null 2>/dev/null &
+      disown 2>/dev/null || true
+    }
+elif command -v nohup >/dev/null 2>&1; then
+  nohup bash "$OM_WORKER_FILE" </dev/null >/dev/null 2>/dev/null &
+  disown 2>/dev/null || true
+else
+  ( bash "$OM_WORKER_FILE" </dev/null >/dev/null 2>/dev/null ) &
+  disown 2>/dev/null || true
+fi
+
+_log_debug "detached worker spawned; hook returning"
 exit 0

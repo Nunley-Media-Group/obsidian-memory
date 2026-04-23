@@ -122,8 +122,22 @@ EOF
   fi
 
   if [ "$cmd" = "tests/run-bdd.sh" ]; then
-    H_STDOUT="$(cd "$PLUGIN_ROOT" && env OBM_IN_BDD_RUN=1 "$PLUGIN_ROOT/tests/run-bdd.sh" 2>"$H_STDERR")"
+    # Nested run (already inside a BDD scenario): run only the example feature,
+    # otherwise the harness feature re-enters itself and blows up exponentially.
+    if [ "${OBM_IN_BDD_RUN:-0}" = 1 ]; then
+      H_STDOUT="$(cd "$PLUGIN_ROOT" && env OBM_IN_BDD_RUN=1 "$PLUGIN_ROOT/tests/run-bdd.sh" "$PLUGIN_ROOT/specs/example/feature.gherkin" 2>"$H_STDERR")"
+    else
+      H_STDOUT="$(cd "$PLUGIN_ROOT" && env OBM_IN_BDD_RUN=1 "$PLUGIN_ROOT/tests/run-bdd.sh" 2>"$H_STDERR")"
+    fi
     H_RC=$?
+    return 0
+  fi
+
+  if [ "$cmd" = "bats tests/integration" ] && [ "${OBM_IN_BDD_RUN:-0}" = 1 ]; then
+    # Nested run: the outer driver already runs the full integration suite as
+    # its own gate; re-running it inside a BDD scenario is duplication that
+    # multiplies total wall time without adding coverage.
+    _h_run "bats tests/integration/smoke.bats"
     return 0
   fi
 

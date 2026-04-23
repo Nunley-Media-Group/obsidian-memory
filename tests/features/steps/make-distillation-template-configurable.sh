@@ -54,10 +54,17 @@ _nth_line() {
 }
 
 _captured_prompt_contents() {
-  local p
+  # Poll for up to 20 seconds — the prompt-capturing claude stub runs inside the
+  # detached async worker, so the captured-prompt file may not exist immediately
+  # after vault-distill.sh returns.
+  local p waited=0
   p="$(_prompt_capture_path)"
-  [ -f "$p" ] || return 1
-  cat "$p"
+  while [ "$waited" -lt 20 ]; do
+    [ -f "$p" ] && { cat "$p"; return 0; }
+    sleep 1
+    waited=$((waited + 1))
+  done
+  return 1
 }
 
 # ------------------------------------------------------------
@@ -202,18 +209,25 @@ then_the_captured_prompt_does_not_contain_at_the_start() {
 then_the_captured_prompt_prefix_matches_the_golden_fixture() {
   local rel="$1"
   local fixture="$PLUGIN_ROOT/$rel"
-  local captured
-  captured="$(_prompt_capture_path)"
+  local captured_path
+  captured_path="$(_prompt_capture_path)"
   [ -f "$fixture" ] || { printf 'missing fixture: %s\n' "$fixture" >&2; return 1; }
-  [ -f "$captured" ] || { printf 'no captured prompt\n' >&2; return 1; }
+  # Poll for up to 20 seconds — worker is async.
+  local waited=0
+  while [ "$waited" -lt 20 ]; do
+    [ -f "$captured_path" ] && break
+    sleep 1
+    waited=$((waited + 1))
+  done
+  [ -f "$captured_path" ] || { printf 'no captured prompt\n' >&2; return 1; }
   local fix_size
   fix_size="$(wc -c < "$fixture" | tr -d ' ')"
-  head -c "$fix_size" "$captured" | cmp -s - "$fixture" || {
+  head -c "$fix_size" "$captured_path" | cmp -s - "$fixture" || {
     printf 'captured prompt prefix did not match %s (first %s bytes)\n' "$fixture" "$fix_size" >&2
     printf '--- expected head ---\n' >&2
     head -c 200 "$fixture" >&2
     printf '\n--- actual head ---\n' >&2
-    head -c 200 "$captured" >&2
+    head -c 200 "$captured_path" >&2
     printf '\n' >&2
     return 1
   }

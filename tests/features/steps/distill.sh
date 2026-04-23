@@ -305,7 +305,15 @@ then_still_gained_a_link_line() {
 }
 
 then_is_created() {
-  [ -f "${1:-}" ]
+  # Poll for up to 20 seconds — vault-distill.sh is now async; the file (e.g.
+  # Index.md) is written by the detached worker after the hook returns.
+  local path="${1:-}" waited=0
+  while [ "$waited" -lt 20 ]; do
+    [ -f "$path" ] && return 0
+    sleep 1
+    waited=$((waited + 1))
+  done
+  return 1
 }
 
 then_it_contains() {
@@ -330,9 +338,20 @@ then_still_contains_and() {
 
 then_ends_with_a_section_containing_the_new_link_line() {
   local path="$1" heading="$2"
-  # Verify heading is present and followed by a link line somewhere below.
-  grep -qF "$heading" "$path" || return 1
-  grep -q '^- \[\[' "$path"
+  # Poll for up to 20 seconds — vault-distill.sh is now async; Index.md is
+  # updated by the detached worker after the hook returns.
+  local waited=0
+  while [ "$waited" -lt 20 ]; do
+    if [ -f "$path" ] && grep -qF "$heading" "$path" && grep -q '^- \[\[' "$path"; then
+      return 0
+    fi
+    sleep 1
+    waited=$((waited + 1))
+  done
+  # Final check with diagnostics.
+  grep -qF "$heading" "$path" || { printf 'heading %s not found in %s\n' "$heading" "$path" >&2; return 1; }
+  grep -q '^- \[\[' "$path" || { printf 'no link line found in %s\n' "$path" >&2; return 1; }
+  return 0
 }
 
 then_no_note_file_was_created() {
