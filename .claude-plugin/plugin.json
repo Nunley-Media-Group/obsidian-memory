@@ -6,9 +6,6 @@
     "name": "Rich Nunley",
     "email": "rnunley@nunleymediagroup.com"
   },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/nunleymediagroup/obsidian-memory"
-  },
+  "repository": "https://github.com/Nunley-Media-Group/obsidian-memory",
   "keywords": ["memory", "obsidian", "rag", "session", "hooks"]
 }
